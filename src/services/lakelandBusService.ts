@@ -234,11 +234,16 @@ export async function findNextBus(arrivalTime: Date, direction: BusDirection): P
 
     // Get arrival time in minutes since midnight
     const arrivalMinutes = arrivalTime.getHours() * 60 + arrivalTime.getMinutes();
+    const arrivalTimeStr = `${arrivalTime.getHours()}:${arrivalTime.getMinutes().toString().padStart(2, '0')}`;
+
+    console.log(`🚌 Looking for ${direction} bus after ${arrivalTimeStr} on ${dayType}`);
+    console.log(`  Available times: ${times.slice(0, 5).join(', ')}${times.length > 5 ? '...' : ''}`);
 
     // Find next bus
     for (const busTime of times) {
       const busMinutes = timeToMinutes(busTime);
       if (busMinutes >= arrivalMinutes) {
+        console.log(`  ✅ Found bus at ${busTime} (wait: ${busMinutes - arrivalMinutes} mins)`);
         return {
           departureTime: busTime,
           waitMinutes: busMinutes - arrivalMinutes,
@@ -247,6 +252,7 @@ export async function findNextBus(arrivalTime: Date, direction: BusDirection): P
     }
 
     // No bus found
+    console.log(`  ❌ No ${direction} bus available after ${arrivalTimeStr}`);
     return null;
   } catch (error) {
     console.error('Failed to find next bus:', error);
