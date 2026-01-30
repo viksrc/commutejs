@@ -1115,6 +1115,22 @@ function App() {
                               <span>{getModeLabel(segment.mode)}</span>
                               <span className="separator">•</span>
                               <span>{segment.duration}</span>
+                              {/* Show departure time for transit segments (PATH, train, bus) */}
+                              {(segment.mode === 'path' || segment.mode === 'train') && (
+                                <>
+                                  {segment.traffic?.includes('Departs') ? (
+                                    <>
+                                      <span className="separator">•</span>
+                                      <span className="segment-departs">{segment.traffic}</span>
+                                    </>
+                                  ) : segment.departureTime ? (
+                                    <>
+                                      <span className="separator">•</span>
+                                      <span className="segment-departs">Departs {segment.departureTime}</span>
+                                    </>
+                                  ) : null}
+                                </>
+                              )}
                               {segment.traffic && segment.mode === 'drive' && (
                                 <>
                                   <span className="separator">•</span>
