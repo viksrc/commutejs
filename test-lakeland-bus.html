@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lakeland Bus Service Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #007AFF;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0051D5;
+        }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+    </style>
+</head>
+<body>
+    <h1>Lakeland Bus Route 46 Service Test</h1>
+
+    <div class="test-section">
+        <h2>1. Fetch Schedule</h2>
+        <button onclick="testFetchSchedule()">Fetch Fresh Schedule</button>
+        <button onclick="testGetSchedule()">Get Schedule (with cache)</button>
+        <div id="schedule-result" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>2. Find Next Bus</h2>
+        <p>Test different arrival times:</p>
+        <button onclick="testNextBus('eastbound', 8, 0)">Eastbound @ 8:00 AM</button>
+        <button onclick="testNextBus('eastbound', 10, 30)">Eastbound @ 10:30 AM</button>
+        <button onclick="testNextBus('westbound', 17, 0)">Westbound @ 5:00 PM</button>
+        <button onclick="testNextBus('westbound', 18, 30)">Westbound @ 6:30 PM</button>
+        <button onclick="testNextBus('eastbound', 23, 0)">Eastbound @ 11:00 PM (no bus)</button>
+        <div id="nextbus-result" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>3. Cache Information</h2>
+        <button onclick="showCacheInfo()">Show Cache Info</button>
+        <button onclick="clearCache()">Clear Cache</button>
+        <div id="cache-result" class="result"></div>
+    </div>
+
+    <script type="module">
+        import { fetchSchedule, getSchedule, findNextBus } from './dist/assets/index-BH-ENZOA.js';
+
+        // Make functions available globally for button clicks
+        window.testFetchSchedule = async function() {
+            const result = document.getElementById('schedule-result');
+            result.innerHTML = '<span class="info">Fetching schedule...</span>';
+            try {
+                const schedule = await fetchSchedule();
+                result.innerHTML = `<span class="success">✓ Schedule fetched successfully!</span>\n\n` +
+                    `Fetched at: ${schedule.fetchedAt}\n` +
+                    `Weekday Eastbound buses: ${schedule.schedules.weekday.eastbound.length}\n` +
+                    `First bus: ${schedule.schedules.weekday.eastbound[0]}\n` +
+                    `Last bus: ${schedule.schedules.weekday.eastbound[schedule.schedules.weekday.eastbound.length - 1]}\n\n` +
+                    `Weekday Westbound buses: ${schedule.schedules.weekday.westbound.length}\n` +
+                    `Weekend Eastbound buses: ${schedule.schedules.weekend.eastbound.length}\n` +
+                    `Weekend Westbound buses: ${schedule.schedules.weekend.westbound.length}`;
+            } catch (error) {
+                result.innerHTML = `<span class="error">✗ Error: ${error.message}</span>`;
+            }
+        };
+
+        window.testGetSchedule = async function() {
+            const result = document.getElementById('schedule-result');
+            result.innerHTML = '<span class="info">Getting schedule (with cache)...</span>';
+            try {
+                const schedule = await getSchedule();
+                result.innerHTML = `<span class="success">✓ Schedule retrieved!</span>\n\n` +
+                    `Fetched at: ${schedule.fetchedAt}\n` +
+                    `Weekday Eastbound: ${JSON.stringify(schedule.schedules.weekday.eastbound.slice(0, 5))}...\n` +
+                    `Weekday Westbound: ${JSON.stringify(schedule.schedules.weekday.westbound.slice(0, 5))}...`;
+            } catch (error) {
+                result.innerHTML = `<span class="error">✗ Error: ${error.message}</span>`;
+            }
+        };
+
+        window.testNextBus = async function(direction, hour, minute) {
+            const result = document.getElementById('nextbus-result');
+            const now = new Date();
+            now.setHours(hour, minute, 0, 0);
+
+            result.innerHTML = `<span class="info">Finding next ${direction} bus after ${now.toLocaleTimeString()}...</span>`;
+
+            try {
+                const nextBus = await findNextBus(now, direction);
+                if (nextBus) {
+                    result.innerHTML = `<span class="success">✓ Next bus found!</span>\n\n` +
+                        `Arrival time: ${now.toLocaleTimeString()}\n` +
+                        `Next bus departs: ${nextBus.departureTime}\n` +
+                        `Wait time: ${nextBus.waitMinutes} minutes`;
+                } else {
+                    result.innerHTML = `<span class="info">No bus available after ${now.toLocaleTimeString()}</span>`;
+                }
+            } catch (error) {
+                result.innerHTML = `<span class="error">✗ Error: ${error.message}</span>`;
+            }
+        };
+
+        window.showCacheInfo = function() {
+            const result = document.getElementById('cache-result');
+            const cacheKey = 'lakeland-bus-route46-schedule';
+            const cached = localStorage.getItem(cacheKey);
+
+            if (cached) {
+                const data = JSON.parse(cached);
+                const age = Date.now() - data.timestamp;
+                const ageHours = Math.floor(age / (1000 * 60 * 60));
+                const ageMinutes = Math.floor((age % (1000 * 60 * 60)) / (1000 * 60));
+
+                result.innerHTML = `<span class="success">Cache exists</span>\n\n` +
+                    `Cached at: ${new Date(data.timestamp).toLocaleString()}\n` +
+                    `Age: ${ageHours}h ${ageMinutes}m\n` +
+                    `Size: ${(JSON.stringify(cached).length / 1024).toFixed(2)} KB`;
+            } else {
+                result.innerHTML = `<span class="info">No cache found</span>`;
+            }
+        };
+
+        window.clearCache = function() {
+            const result = document.getElementById('cache-result');
+            localStorage.removeItem('lakeland-bus-route46-schedule');
+            result.innerHTML = `<span class="success">✓ Cache cleared</span>`;
+        };
+    </script>
+</body>
+</html>

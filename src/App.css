@@ -1,0 +1,389 @@
+/* Reset and Base Styles */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', 'Roboto',
+    'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* iOS-style Variables */
+:root {
+  --bg-primary: #f2f2f7;
+  --bg-card: #ffffff;
+  --bg-toggle: #e9e9eb;
+  --bg-toggle-active: #ffffff;
+  --text-primary: #000000;
+  --text-secondary: #8e8e93;
+  --text-tertiary: #aeaeb2;
+  --border-color: #e5e5ea;
+  --blue: #007aff;
+  --green: #34c759;
+  --orange: #ff9500;
+  --yellow: #ffcc00;
+  --icon-bg: #e3f2fd;
+  --icon-color: #007aff;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+/* Dark Mode */
+.app.dark {
+  --bg-primary: #000000;
+  --bg-card: #1c1c1e;
+  --bg-toggle: #2c2c2e;
+  --bg-toggle-active: #3a3a3c;
+  --text-primary: #ffffff;
+  --text-secondary: #8e8e93;
+  --text-tertiary: #636366;
+  --border-color: #38383a;
+  --icon-bg: #1c3a5e;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* App Container */
+.app {
+  min-height: 100vh;
+  background-color: var(--bg-primary);
+}
+
+.container {
+  max-width: 500px;
+  margin: 0 auto;
+  padding: 20px 16px;
+}
+
+/* Header */
+.header {
+  margin-bottom: 20px;
+}
+
+.title {
+  font-size: 34px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
+}
+
+.subtitle {
+  display: none;
+}
+
+/* Direction Toggle - iOS Segmented Control Style */
+.toggle-container {
+  display: flex;
+  padding: 2px;
+  margin-bottom: 20px;
+  border-radius: 9px;
+  background-color: var(--bg-toggle);
+}
+
+.toggle-button {
+  flex: 1;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 7px;
+  background-color: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.toggle-button.active {
+  background-color: var(--bg-toggle-active);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Loading State */
+.loading-container {
+  padding: 60px 20px;
+  text-align: center;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Route Cards */
+.route-card {
+  background-color: var(--bg-card);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.route-card:active {
+  transform: scale(0.98);
+}
+
+/* Best Badge - Now inline */
+.best-badge {
+  display: none;
+}
+
+/* Route Header */
+.route-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.route-name-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.star-icon {
+  color: var(--yellow);
+  font-size: 16px;
+}
+
+.expand-icon {
+  display: none;
+}
+
+.route-name {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.route-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.clock-icon {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.total-time {
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.time-container {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.expand-button {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: var(--icon-bg);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.expand-button:hover {
+  transform: scale(1.1);
+}
+
+.expand-button svg {
+  width: 14px;
+  height: 14px;
+  color: var(--blue);
+  transition: transform 0.2s ease;
+}
+
+.expand-button.expanded svg {
+  transform: rotate(180deg);
+}
+
+.eta {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--blue);
+}
+
+.time-separator {
+  display: none;
+}
+
+/* Segments Container */
+.segments-container {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.segment-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 8px 0;
+  position: relative;
+}
+
+.segment-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-right: 12px;
+}
+
+.segment-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background-color: var(--icon-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  z-index: 1;
+  color: var(--blue);
+}
+
+.segment-line {
+  width: 2px;
+  height: 30px;
+  background-color: var(--border-color);
+  margin-top: 4px;
+}
+
+.mode-icon {
+  font-size: 18px;
+}
+
+.segment-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.segment-route {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.segment-details {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.segment-details .separator {
+  color: var(--text-tertiary);
+}
+
+.segment-traffic {
+  font-weight: 500;
+}
+
+.segment-traffic.light {
+  color: var(--green);
+}
+
+.segment-traffic.moderate {
+  color: var(--orange);
+}
+
+.segment-traffic.heavy,
+.segment-traffic.warning {
+  color: #ff3b30;
+}
+
+.segment-duration {
+  display: none;
+}
+
+.map-button {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background-color: var(--icon-bg);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-left: 12px;
+  transition: transform 0.15s ease;
+}
+
+.map-button:hover {
+  transform: scale(1.1);
+}
+
+.map-button svg {
+  width: 18px;
+  height: 18px;
+  color: var(--blue);
+}
+
+/* Updated Text */
+.updated-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: center;
+  margin-top: 20px;
+}
+
+/* Refresh Button */
+.refresh-button {
+  display: none;
+}
+
+/* Info Card */
+.info-card {
+  display: none;
+}
+
+/* Pull to refresh indicator (for future) */
+.pull-indicator {
+  text-align: center;
+  padding: 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+/* Responsive - larger screens */
+@media (min-width: 768px) {
+  .container {
+    max-width: 600px;
+    padding: 40px 20px;
+  }
+
+  .title {
+    font-size: 40px;
+  }
+
+  .route-card {
+    padding: 20px;
+  }
+}
