@@ -498,16 +498,6 @@ function App() {
 
         // Only include Route 4 if bus is available
         if (nextBus) {
-          // Add 5 mins to subway
-          route4Segments.push({
-            from: 'Port Authority',
-            to: 'Subway',
-            duration: '5m',
-            distance: '-',
-            traffic: 'Walk',
-            mode: 'walk',
-          });
-
           // Subway from Port Authority to WTC
           const pabtArrivalTime = getDepartureTimeDate(route4Segments);
           const pabtSubway = await fetchTransitDirections(
