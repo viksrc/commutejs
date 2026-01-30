@@ -247,6 +247,10 @@ function calculateLeaveInMins(segments: CommuteSegment[], routeName: string): nu
   // Find the first transit segment (path or train)
   let transitSegmentIndex = -1;
   let transitDepartureTime: Date | null = null;
+  let transitDepartureTimeStr = '';
+
+  console.log(`\n=== calculateLeaveInMins for "${routeName}" ===`);
+  console.log('Segments:', segments.map((s, i) => `[${i}] ${s.mode}: ${s.from}→${s.to} (${s.duration}) traffic="${s.traffic}" departureTime="${s.departureTime}"`));
 
   for (let i = 0; i < segments.length; i++) {
     const segment = segments[i];
@@ -256,6 +260,7 @@ function calculateLeaveInMins(segments: CommuteSegment[], routeName: string): nu
       // Try to get departure time from departureTime field first
       if (segment.departureTime) {
         transitDepartureTime = parseTimeToDate(segment.departureTime);
+        transitDepartureTimeStr = segment.departureTime;
       }
 
       // If no departureTime, try to parse from traffic field (e.g., "Departs 6:20 AM")
@@ -263,10 +268,14 @@ function calculateLeaveInMins(segments: CommuteSegment[], routeName: string): nu
         const departsMatch = segment.traffic.match(/Departs\s+(.+)/i);
         if (departsMatch) {
           transitDepartureTime = parseTimeToDate(departsMatch[1]);
+          transitDepartureTimeStr = departsMatch[1];
         }
       }
 
       if (transitDepartureTime) {
+        console.log(`Found transit segment at index ${i}: ${segment.mode} ${segment.from}→${segment.to}`);
+        console.log(`Transit departure time string: "${transitDepartureTimeStr}"`);
+        console.log(`Parsed transit departure time: ${transitDepartureTime.toLocaleTimeString()}`);
         break;
       }
     }
@@ -274,24 +283,32 @@ function calculateLeaveInMins(segments: CommuteSegment[], routeName: string): nu
 
   // If no transit segment found or no departure time, return null
   if (transitSegmentIndex === -1 || !transitDepartureTime) {
+    console.log('No transit segment with departure time found, returning null');
     return null;
   }
 
   // Calculate total duration of segments before the transit segment
   let priorMinutes = 0;
   for (let i = 0; i < transitSegmentIndex; i++) {
-    priorMinutes += parseDurationToMinutes(segments[i].duration);
+    const segDuration = parseDurationToMinutes(segments[i].duration);
+    console.log(`Prior segment [${i}] ${segments[i].from}→${segments[i].to}: ${segments[i].duration} = ${segDuration} mins`);
+    priorMinutes += segDuration;
   }
+  console.log(`Total prior minutes: ${priorMinutes}`);
 
   // Calculate commute start time = transit departure - prior segments duration
   const commuteStartTime = new Date(transitDepartureTime.getTime() - priorMinutes * 60000);
+  console.log(`Commute start time: ${commuteStartTime.toLocaleTimeString()} (transit ${transitDepartureTime.toLocaleTimeString()} - ${priorMinutes}m)`);
 
   // Buffer: 5 mins for Harrison route, 2 mins otherwise
   const buffer = routeName.toLowerCase().includes('harrison') ? 5 : 2;
+  console.log(`Buffer: ${buffer} mins`);
 
   // Calculate leave in mins = start time - now - buffer
   const now = new Date();
   const leaveInMins = Math.round((commuteStartTime.getTime() - now.getTime()) / 60000) - buffer;
+  console.log(`Now: ${now.toLocaleTimeString()}`);
+  console.log(`Leave in mins: (${commuteStartTime.toLocaleTimeString()} - ${now.toLocaleTimeString()}) - ${buffer} = ${leaveInMins}`);
 
   return leaveInMins;
 }
