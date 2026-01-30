@@ -31,9 +31,13 @@ function parseScheduleHTML(html: string, stopName: string): string[] {
     console.log('  Available stops in schedule:');
     rows.forEach((row, idx) => {
       const nameDiv = row.querySelector('.s-name');
-      if (nameDiv) {
-        console.log(`    ${idx}: "${nameDiv.textContent?.trim()}"`);
-      }
+      const nameTd = row.querySelector('td.wg-col-name');
+      console.log(`    Row ${idx}:`, {
+        hasNameDiv: !!nameDiv,
+        nameDiv Text: nameDiv?.textContent?.trim() || 'EMPTY',
+        hasTd: !!nameTd,
+        tdInnerHTML: nameTd?.innerHTML?.substring(0, 100) || 'NO TD'
+      });
     });
   } else {
     console.warn('  No rows found with class "stop-schedule". HTML snippet:', html.substring(0, 500));
