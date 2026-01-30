@@ -9,8 +9,11 @@
 // Add your key to .env file (see .env.example for template)
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
+console.log('Google Maps API Key present:', !!GOOGLE_MAPS_API_KEY);
+console.log('API Key starts with:', GOOGLE_MAPS_API_KEY ? GOOGLE_MAPS_API_KEY.substring(0, 10) + '...' : 'NOT SET');
+
 if (!GOOGLE_MAPS_API_KEY) {
-  console.error('Missing VITE_GOOGLE_MAPS_API_KEY environment variable. Please add it to your .env file.');
+  console.error('❌ Missing VITE_GOOGLE_MAPS_API_KEY environment variable. Please add it to your .env file.');
 }
 
 const ROUTES_API_URL = 'https://routes.googleapis.com/directions/v2:computeRoutes';
@@ -36,6 +39,8 @@ export async function fetchDrivingDirections(
   origin: string,
   destination: string,
 ): Promise<RouteSegment | null> {
+  console.log(`🚗 Fetching driving directions: ${origin} → ${destination}`);
+
   try {
     const requestBody = {
       origin: {
@@ -69,10 +74,20 @@ export async function fetchDrivingDirections(
 
     const data = await response.json();
 
+    console.log('Response status:', response.status);
+    console.log('Response OK:', response.ok);
+
     // Log any API errors
     if (data.error) {
-      console.error('Routes API Error:', JSON.stringify(data.error, null, 2));
+      console.error('❌ Routes API Error:', JSON.stringify(data.error, null, 2));
       console.error('Status:', response.status);
+      console.error('Full response:', data);
+      return null;
+    }
+
+    if (!response.ok) {
+      console.error('❌ API request failed with status:', response.status);
+      console.error('Response data:', data);
       return null;
     }
 
@@ -98,6 +113,8 @@ export async function fetchDrivingDirections(
         durationWithTrafficSeconds
       );
 
+      console.log('✅ Driving route found:', durationText, distanceMiles, 'mi');
+
       return {
         from: origin,
         to: destination,
@@ -107,7 +124,8 @@ export async function fetchDrivingDirections(
       };
     }
 
-    console.warn('No routes found in response');
+    console.warn('⚠️ No routes found in response');
+    console.log('Full response:', data);
     return null;
   } catch (error) {
     console.error('Error fetching driving directions with Routes API:', error);
@@ -123,6 +141,8 @@ export async function fetchTransitDirections(
   destination: string,
   departureTime?: Date,
 ): Promise<RouteSegment | null> {
+  console.log(`🚇 Fetching transit directions: ${origin} → ${destination}`);
+
   try {
     const requestBody: any = {
       origin: {
@@ -158,10 +178,20 @@ export async function fetchTransitDirections(
 
     const data = await response.json();
 
+    console.log('Transit response status:', response.status);
+    console.log('Transit response OK:', response.ok);
+
     // Log any API errors
     if (data.error) {
-      console.error('Routes API Transit Error:', JSON.stringify(data.error, null, 2));
+      console.error('❌ Routes API Transit Error:', JSON.stringify(data.error, null, 2));
       console.error('Status:', response.status);
+      console.error('Full response:', data);
+      return null;
+    }
+
+    if (!response.ok) {
+      console.error('❌ Transit API request failed with status:', response.status);
+      console.error('Response data:', data);
       return null;
     }
 
@@ -208,6 +238,8 @@ export async function fetchTransitDirections(
         ? `Delays (+${delayMinutes} min)` 
         : 'On time';
 
+      console.log('✅ Transit route found:', durationText);
+
       return {
         from: origin,
         to: destination,
@@ -218,7 +250,8 @@ export async function fetchTransitDirections(
       };
     }
 
-    console.warn('No transit routes found in response');
+    console.warn('⚠️ No transit routes found in response');
+    console.log('Full response:', data);
     return null;
   } catch (error) {
     console.error('Error fetching transit directions with Routes API:', error);
