@@ -18,20 +18,26 @@ const LAKELAND_BASE_URL = '/api/lakeland-bus';
  * Parse schedule HTML to extract times for a specific stop
  */
 function parseScheduleHTML(html: string, stopName: string): string[] {
+  console.log(`  Looking for stop: "${stopName}"`);
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
 
   // Find the row containing the stop name
   const rows = Array.from(doc.querySelectorAll('tr.stop-schedule'));
+  console.log(`  Found ${rows.length} rows with class "stop-schedule"`);
 
   // Log all available stop names for debugging
-  console.log('Available stops in schedule:');
-  rows.forEach((row, idx) => {
-    const nameDiv = row.querySelector('.s-name');
-    if (nameDiv) {
-      console.log(`  ${idx}: "${nameDiv.textContent?.trim()}"`);
-    }
-  });
+  if (rows.length > 0) {
+    console.log('  Available stops in schedule:');
+    rows.forEach((row, idx) => {
+      const nameDiv = row.querySelector('.s-name');
+      if (nameDiv) {
+        console.log(`    ${idx}: "${nameDiv.textContent?.trim()}"`);
+      }
+    });
+  } else {
+    console.warn('  No rows found with class "stop-schedule". HTML snippet:', html.substring(0, 500));
+  }
 
   const stopRow = rows.find(row => {
     const nameDiv = row.querySelector('.s-name');
@@ -105,10 +111,20 @@ export async function fetchSchedule(): Promise<CachedScheduleData> {
 
     const [weekdayEastHTML, weekdayWestHTML, weekendEastHTML, weekendWestHTML] = schedules;
 
+    console.log('📄 HTML responses received:');
+    console.log('  Weekday East:', weekdayEastHTML.length, 'chars');
+    console.log('  Weekday West:', weekdayWestHTML.length, 'chars');
+    console.log('  Weekend East:', weekendEastHTML.length, 'chars');
+    console.log('  Weekend West:', weekendWestHTML.length, 'chars');
+
     // Parse each schedule
+    console.log('🔍 Parsing weekday eastbound...');
     const weekdayEastTimes = parseScheduleHTML(weekdayEastHTML, 'Parsippany (Waterview P&R)');
+    console.log('🔍 Parsing weekday westbound...');
     const weekdayWestTimes = parseScheduleHTML(weekdayWestHTML, 'Depart From NY PABT');
+    console.log('🔍 Parsing weekend eastbound...');
     const weekendEastTimes = parseScheduleHTML(weekendEastHTML, 'Parsippany (Waterview P&R)');
+    console.log('🔍 Parsing weekend westbound...');
     const weekendWestTimes = parseScheduleHTML(weekendWestHTML, 'Depart From NY PABT');
 
     // Add AM/PM
