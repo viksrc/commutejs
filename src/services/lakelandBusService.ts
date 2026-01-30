@@ -129,7 +129,8 @@ export async function fetchSchedule(): Promise<CachedScheduleData> {
     console.log('🔍 Parsing weekend eastbound...');
     const weekendEastTimes = parseScheduleHTML(weekendEastHTML, 'Parsippany (Waterview P&R)');
     console.log('🔍 Parsing weekend westbound...');
-    const weekendWestTimes = parseScheduleHTML(weekendWestHTML, 'NY PABT');
+    // Weekend westbound uses "LEAVES FROM GATE #" instead of "NY PABT"
+    const weekendWestTimes = parseScheduleHTML(weekendWestHTML, 'LEAVES FROM GATE');
 
     // Add AM/PM
     const weekdayEastbound = addAmPm(weekdayEastTimes, 'eastbound', false);
