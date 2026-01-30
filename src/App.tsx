@@ -431,7 +431,7 @@ function App() {
             ...subway,
             from: 'Penn Station',
             to: 'WTC',
-            mode: 'path',
+            mode: 'train', // NYC Subway, not PATH
           });
         }
 
@@ -520,7 +520,7 @@ function App() {
               ...pabtSubway,
               from: 'Port Authority',
               to: 'WTC',
-              mode: 'path',
+              mode: 'train', // NYC Subway, not PATH
             });
           }
 
@@ -707,7 +707,7 @@ function App() {
             ...subway,
             from: 'WTC',
             to: 'Penn Station',
-            mode: 'path',
+            mode: 'train', // NYC Subway, not PATH
           });
         }
 
@@ -789,7 +789,7 @@ function App() {
             ...pabtSubway,
             from: 'WTC',
             to: 'Port Authority',
-            mode: 'path',
+            mode: 'train', // NYC Subway, not PATH
           });
         }
 
