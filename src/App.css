@@ -227,6 +227,20 @@ body {
   color: var(--blue);
 }
 
+.leave-time {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--green);
+}
+
+.leave-time.soon {
+  color: var(--orange);
+}
+
+.leave-time.urgent {
+  color: #ff3b30;
+}
+
 .time-separator {
   display: none;
 }

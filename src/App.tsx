@@ -29,6 +29,7 @@ type RouteOption = {
   eta: string;
   segments: CommuteSegment[];
   isBest?: boolean;
+  leaveInMins?: number;
 };
 
 type CommuteData = {
@@ -206,6 +207,95 @@ function calculateETA(totalTime: string): string {
   });
 }
 
+// Helper to parse duration string to minutes
+function parseDurationToMinutes(duration: string): number {
+  const hoursMatch = duration.match(/(\d+)h/);
+  const minutesMatch = duration.match(/(\d+)m/);
+
+  let totalMinutes = 0;
+  if (hoursMatch) {
+    totalMinutes += parseInt(hoursMatch[1], 10) * 60;
+  }
+  if (minutesMatch) {
+    totalMinutes += parseInt(minutesMatch[1], 10);
+  }
+  return totalMinutes;
+}
+
+// Helper to parse time string (e.g., "6:20 AM") to Date object for today
+function parseTimeToDate(timeStr: string): Date | null {
+  const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  if (!match) return null;
+
+  let hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const period = match[3].toUpperCase();
+
+  if (period === 'PM' && hours !== 12) {
+    hours += 12;
+  } else if (period === 'AM' && hours === 12) {
+    hours = 0;
+  }
+
+  const now = new Date();
+  const result = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0);
+  return result;
+}
+
+// Calculate "Leave in X mins" based on first transit departure time
+function calculateLeaveInMins(segments: CommuteSegment[], routeName: string): number | null {
+  // Find the first transit segment (path or train)
+  let transitSegmentIndex = -1;
+  let transitDepartureTime: Date | null = null;
+
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    if (segment.mode === 'path' || segment.mode === 'train') {
+      transitSegmentIndex = i;
+
+      // Try to get departure time from departureTime field first
+      if (segment.departureTime) {
+        transitDepartureTime = parseTimeToDate(segment.departureTime);
+      }
+
+      // If no departureTime, try to parse from traffic field (e.g., "Departs 6:20 AM")
+      if (!transitDepartureTime && segment.traffic) {
+        const departsMatch = segment.traffic.match(/Departs\s+(.+)/i);
+        if (departsMatch) {
+          transitDepartureTime = parseTimeToDate(departsMatch[1]);
+        }
+      }
+
+      if (transitDepartureTime) {
+        break;
+      }
+    }
+  }
+
+  // If no transit segment found or no departure time, return null
+  if (transitSegmentIndex === -1 || !transitDepartureTime) {
+    return null;
+  }
+
+  // Calculate total duration of segments before the transit segment
+  let priorMinutes = 0;
+  for (let i = 0; i < transitSegmentIndex; i++) {
+    priorMinutes += parseDurationToMinutes(segments[i].duration);
+  }
+
+  // Calculate commute start time = transit departure - prior segments duration
+  const commuteStartTime = new Date(transitDepartureTime.getTime() - priorMinutes * 60000);
+
+  // Buffer: 5 mins for Harrison route, 2 mins otherwise
+  const buffer = routeName.toLowerCase().includes('harrison') ? 5 : 2;
+
+  // Calculate leave in mins = start time - now - buffer
+  const now = new Date();
+  const leaveInMins = Math.round((commuteStartTime.getTime() - now.getTime()) / 60000) - buffer;
+
+  return leaveInMins;
+}
+
 function App() {
   const [isDarkMode, setIsDarkMode] = useState(
     window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -284,11 +374,13 @@ function App() {
         });
 
         const route1Total = calculateTotalDuration(route1Segments);
+        const route1Name = 'Via Harrison PATH';
         routes.push({
-          name: 'Via Harrison PATH',
+          name: route1Name,
           totalTime: route1Total,
           eta: calculateETA(route1Total),
           segments: route1Segments,
+          leaveInMins: calculateLeaveInMins(route1Segments, route1Name) ?? undefined,
         });
 
         // ROUTE 2: Via Morris Plains → Hoboken → PATH
@@ -365,11 +457,13 @@ function App() {
         });
 
         const route2Total = calculateTotalDuration(route2Segments);
+        const route2Name = 'Via Hoboken Station';
         routes.push({
-          name: 'Via Hoboken Station',
+          name: route2Name,
           totalTime: route2Total,
           eta: calculateETA(route2Total),
           segments: route2Segments,
+          leaveInMins: calculateLeaveInMins(route2Segments, route2Name) ?? undefined,
         });
 
         // ROUTE 3: Via Morris Plains → NY Penn → Subway to WTC
@@ -446,11 +540,13 @@ function App() {
         });
 
         const route3Total = calculateTotalDuration(route3Segments);
+        const route3Name = 'Via NY Penn Station';
         routes.push({
-          name: 'Via NY Penn Station',
+          name: route3Name,
           totalTime: route3Total,
           eta: calculateETA(route3Total),
           segments: route3Segments,
+          leaveInMins: calculateLeaveInMins(route3Segments, route3Name) ?? undefined,
         });
 
         // ROUTE 4: Via Waterview Park & Ride → Port Authority Bus → Subway to WTC
@@ -525,11 +621,13 @@ function App() {
           });
 
           const route4Total = calculateTotalDuration(route4Segments);
+          const route4Name = 'Via Port Authority Bus';
           routes.push({
-            name: 'Via Port Authority Bus',
+            name: route4Name,
             totalTime: route4Total,
             eta: calculateETA(route4Total),
             segments: route4Segments,
+            leaveInMins: calculateLeaveInMins(route4Segments, route4Name) ?? undefined,
           });
         } else {
           console.warn('No Lakeland bus available for Route 4 (toOffice)');
@@ -583,11 +681,13 @@ function App() {
         }
 
         const route1Total = calculateTotalDuration(route1Segments);
+        const route1NameHome = 'Via Harrison PATH';
         routes.push({
-          name: 'Via Harrison PATH',
+          name: route1NameHome,
           totalTime: route1Total,
           eta: calculateETA(route1Total),
           segments: route1Segments,
+          leaveInMins: calculateLeaveInMins(route1Segments, route1NameHome) ?? undefined,
         });
 
         // TO HOME - ROUTE 2: Via PATH → Hoboken → Morris Plains Train
@@ -665,11 +765,13 @@ function App() {
         }
 
         const route2Total = calculateTotalDuration(route2Segments);
+        const route2NameHome = 'Via Hoboken Station';
         routes.push({
-          name: 'Via Hoboken Station',
+          name: route2NameHome,
           totalTime: route2Total,
           eta: calculateETA(route2Total),
           segments: route2Segments,
+          leaveInMins: calculateLeaveInMins(route2Segments, route2NameHome) ?? undefined,
         });
 
         // TO HOME - ROUTE 3: Via Subway to Penn Station → Morris Plains Train
@@ -747,11 +849,13 @@ function App() {
         }
 
         const route3Total = calculateTotalDuration(route3Segments);
+        const route3NameHome = 'Via NY Penn Station';
         routes.push({
-          name: 'Via NY Penn Station',
+          name: route3NameHome,
           totalTime: route3Total,
           eta: calculateETA(route3Total),
           segments: route3Segments,
+          leaveInMins: calculateLeaveInMins(route3Segments, route3NameHome) ?? undefined,
         });
 
         // TO HOME - ROUTE 4: Via Subway to Port Authority → Bus to Waterview
@@ -837,11 +941,13 @@ function App() {
           }
 
           const route4Total = calculateTotalDuration(route4Segments);
+          const route4NameHome = 'Via Port Authority Bus';
           routes.push({
-            name: 'Via Port Authority Bus',
+            name: route4NameHome,
             totalTime: route4Total,
             eta: calculateETA(route4Total),
             segments: route4Segments,
+            leaveInMins: calculateLeaveInMins(route4Segments, route4NameHome) ?? undefined,
           });
         } else {
           console.warn('No Lakeland bus available for Route 4 (toHome)');
@@ -959,6 +1065,11 @@ function App() {
                       >
                         <ChevronIcon expanded={isExpanded} />
                       </button>
+                      {route.leaveInMins !== undefined && (
+                        <span className={`leave-time ${route.leaveInMins <= 0 ? 'urgent' : route.leaveInMins <= 5 ? 'soon' : ''}`}>
+                          Leave: {route.leaveInMins <= 0 ? 'Now!' : `${route.leaveInMins}m`}
+                        </span>
+                      )}
                       <span className="eta">ETA: {route.eta}</span>
                     </div>
                   </div>
