@@ -23,6 +23,16 @@ function parseScheduleHTML(html: string, stopName: string): string[] {
 
   // Find the row containing the stop name
   const rows = Array.from(doc.querySelectorAll('tr.stop-schedule'));
+
+  // Log all available stop names for debugging
+  console.log('Available stops in schedule:');
+  rows.forEach((row, idx) => {
+    const nameDiv = row.querySelector('.s-name');
+    if (nameDiv) {
+      console.log(`  ${idx}: "${nameDiv.textContent?.trim()}"`);
+    }
+  });
+
   const stopRow = rows.find(row => {
     const nameDiv = row.querySelector('.s-name');
     return nameDiv && nameDiv.textContent?.includes(stopName);
