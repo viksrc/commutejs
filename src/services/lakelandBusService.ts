@@ -34,7 +34,7 @@ function parseScheduleHTML(html: string, stopName: string): string[] {
       const nameTd = row.querySelector('td.wg-col-name');
       console.log(`    Row ${idx}:`, {
         hasNameDiv: !!nameDiv,
-        nameDiv Text: nameDiv?.textContent?.trim() || 'EMPTY',
+        nameDivText: nameDiv?.textContent?.trim() || 'EMPTY',
         hasTd: !!nameTd,
         tdInnerHTML: nameTd?.innerHTML?.substring(0, 100) || 'NO TD'
       });
