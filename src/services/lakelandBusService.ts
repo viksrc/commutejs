@@ -11,7 +11,8 @@ const SCHEDULE_IDS = {
   weekendWestbound: '28',
 };
 
-const LAKELAND_BASE_URL = 'https://www.lakelandbus.com/wp-admin/admin-ajax.php';
+// Use our Vercel proxy to avoid CORS issues
+const LAKELAND_BASE_URL = '/api/lakeland-bus';
 
 /**
  * Parse schedule HTML to extract times for a specific stop
@@ -83,12 +84,14 @@ function addAmPm(times: string[], direction: BusDirection, isWeekend: boolean): 
  */
 export async function fetchSchedule(): Promise<CachedScheduleData> {
   try {
+    console.log('🚌 Fetching Lakeland Bus schedules via proxy...');
     const schedules = await Promise.all([
-      fetch(`${LAKELAND_BASE_URL}?action=schedule&id=${SCHEDULE_IDS.weekdayEastbound}`).then(r => r.text()),
-      fetch(`${LAKELAND_BASE_URL}?action=schedule&id=${SCHEDULE_IDS.weekdayWestbound}`).then(r => r.text()),
-      fetch(`${LAKELAND_BASE_URL}?action=schedule&id=${SCHEDULE_IDS.weekendEastbound}`).then(r => r.text()),
-      fetch(`${LAKELAND_BASE_URL}?action=schedule&id=${SCHEDULE_IDS.weekendWestbound}`).then(r => r.text()),
+      fetch(`${LAKELAND_BASE_URL}?id=${SCHEDULE_IDS.weekdayEastbound}`).then(r => r.text()),
+      fetch(`${LAKELAND_BASE_URL}?id=${SCHEDULE_IDS.weekdayWestbound}`).then(r => r.text()),
+      fetch(`${LAKELAND_BASE_URL}?id=${SCHEDULE_IDS.weekendEastbound}`).then(r => r.text()),
+      fetch(`${LAKELAND_BASE_URL}?id=${SCHEDULE_IDS.weekendWestbound}`).then(r => r.text()),
     ]);
+    console.log('✅ Lakeland Bus schedules fetched successfully');
 
     const [weekdayEastHTML, weekdayWestHTML, weekendEastHTML, weekendWestHTML] = schedules;
 
