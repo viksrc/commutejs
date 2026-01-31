@@ -254,7 +254,7 @@ function calculateLeaveInMins(segments: CommuteSegment[], routeName: string): nu
 
   for (let i = 0; i < segments.length; i++) {
     const segment = segments[i];
-    if (segment.mode === 'path' || segment.mode === 'train') {
+    if (segment.mode === 'path' || segment.mode === 'train' || segment.mode === 'bus') {
       transitSegmentIndex = i;
 
       // Try to get departure time from departureTime field first
@@ -1116,7 +1116,7 @@ function App() {
                               <span className="separator">•</span>
                               <span>{segment.duration}</span>
                               {/* Show departure time for transit segments (PATH, train, bus) */}
-                              {(segment.mode === 'path' || segment.mode === 'train') && (
+                              {(segment.mode === 'path' || segment.mode === 'train' || segment.mode === 'bus') && (
                                 <>
                                   {segment.traffic?.includes('Departs') ? (
                                     <>
