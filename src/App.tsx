@@ -604,7 +604,7 @@ function App() {
             duration: busDrivingTime?.duration || '45m',
             distance: busDrivingTime?.distance || '30 mi',
             traffic: `Departs ${nextBus.departureTime}`,
-            mode: 'path',
+            mode: 'bus',
             departureTime: nextBus.departureTime,
           });
         }
@@ -931,7 +931,7 @@ function App() {
             duration: busDrivingTime?.duration || '45m',
             distance: busDrivingTime?.distance || '30 mi',
             traffic: `Departs ${nextBusHome.departureTime}`,
-            mode: 'path',
+            mode: 'bus',
             departureTime: nextBusHome.departureTime,
           });
         }
