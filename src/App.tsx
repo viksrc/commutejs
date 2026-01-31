@@ -611,7 +611,7 @@ function App() {
 
         // Only include Route 4 if bus is available
         if (nextBus) {
-          // Subway from Port Authority to WTC
+          // Subway from Port Authority to Office
           const pabtArrivalTime = getDepartureTimeDate(route4Segments);
           const pabtSubway = await fetchTransitDirections(
             LOCATIONS.portAuthority.address,
@@ -622,20 +622,10 @@ function App() {
             route4Segments.push({
               ...pabtSubway,
               from: 'Port Authority',
-              to: 'WTC',
+              to: 'Office',
               mode: 'train', // NYC Subway, not PATH
             });
           }
-
-          // Walk from WTC to Office
-          route4Segments.push({
-            from: 'WTC',
-            to: 'Office',
-            duration: '5m',
-            distance: '-',
-            traffic: 'Walk',
-            mode: 'walk',
-          });
 
           const route4Total = calculateTotalDuration(route4Segments);
           const route4Name = 'Via Port Authority Bus';
@@ -878,17 +868,7 @@ function App() {
         // TO HOME - ROUTE 4: Via Subway to Port Authority → Bus to Waterview
         const route4Segments: CommuteSegment[] = [];
 
-        // Walk from Office to WTC
-        route4Segments.push({
-          from: 'Office',
-          to: 'WTC',
-          duration: '5m',
-          distance: '-',
-          traffic: 'Walk',
-          mode: 'walk',
-        });
-
-        // Subway from WTC to Port Authority
+        // Subway from Office to Port Authority
         const wtcArrivalTime4 = getDepartureTimeDate(route4Segments);
         const pabtSubway = await fetchTransitDirections(
           LOCATIONS.office.address,
@@ -898,21 +878,11 @@ function App() {
         if (pabtSubway) {
           route4Segments.push({
             ...pabtSubway,
-            from: 'WTC',
+            from: 'Office',
             to: 'Port Authority',
             mode: 'train', // NYC Subway, not PATH
           });
         }
-
-        // Walk to bus
-        route4Segments.push({
-          from: 'Subway',
-          to: 'Port Authority',
-          duration: '5m',
-          distance: '-',
-          traffic: 'Walk',
-          mode: 'walk',
-        });
 
         // Find next Lakeland Bus (westbound)
         const pabtArrivalTime4 = getDepartureTimeDate(route4Segments);
