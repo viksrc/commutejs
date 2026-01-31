@@ -318,6 +318,11 @@ body {
   font-weight: 500;
 }
 
+.segment-departs {
+  font-weight: 500;
+  color: var(--blue);
+}
+
 .segment-traffic.light {
   color: var(--green);
 }
