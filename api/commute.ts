@@ -298,25 +298,16 @@ function parseTimeToDate(timeStr: string): Date | null {
     else if (period === 'AM' && hours === 12) hours = 0;
 
     const now = new Date();
-    // Get current date components in NY
     const nyStr = now.toLocaleString('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' });
     const [month, day, year] = nyStr.split('/');
 
-    // NY is either -05:00 (EST) or -04:00 (EDT)
-    // We can let the Date constructor handle the "local" time by creating a string and 
-    // simply appending the current NY offset, but simpler:
-    // Create a date in local time, then adjust it to represent that same wall-clock time in NY
+    // Create a date as if it were local time (UTC on Vercel)
     const date = new Date(`${year}-${month}-${day}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`);
 
-    // If we're on a server (UTC) or local (EST), we want this 'date' to represent 'wall clock' NY.
-    // The most reliable way: use a formatter to see what the difference is.
-    const formatter = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/New_York',
-        hour: 'numeric',
-        hour12: false
-    });
-
-    return date;
+    // Adjust for the difference between "local" and "America/New_York"
+    const nyDate = new Date(date.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const diff = date.getTime() - nyDate.getTime();
+    return new Date(date.getTime() + diff);
 }
 
 function calculateArrivalTime(departureTime: string, duration: string): string | null {
