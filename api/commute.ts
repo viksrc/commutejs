@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getSchedule } from './services/lakelandBus';
-import type { CachedScheduleData } from './services/lakelandBus';
+import { getSchedule } from './services/lakelandBus.js';
+import type { CachedScheduleData } from './services/lakelandBus.js';
 
 // ============ TYPES ============
 interface CommuteSegment {

@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getSchedule } from './services/lakelandBus';
+import { getSchedule } from './services/lakelandBus.js';
 
 export default async function handler(
   req: VercelRequest,
