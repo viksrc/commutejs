@@ -311,7 +311,8 @@ function App() {
   const fetchCommuteData = async (dir: 'toOffice' | 'toHome') => {
     try {
       const now = new Date().toISOString();
-      const response = await fetch(`/api/commute?direction=${dir}&now=${encodeURIComponent(now)}`);
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const response = await fetch(`/api/commute?direction=${dir}&now=${encodeURIComponent(now)}&timeZone=${encodeURIComponent(timeZone)}`);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || `API error: ${response.status}`);

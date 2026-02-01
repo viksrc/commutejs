@@ -208,7 +208,13 @@ async function fetchDrivingDirections(origin: string, destination: string): Prom
     }
 }
 
-async function fetchTransitDirections(origin: string, destination: string, departureTime?: Date): Promise<Partial<CommuteSegment> | null> {
+function calculateArrivalTime(departureTime: string, duration: string, timeZone: string): string | null {
+    const depDate = parseTimeToDate(departureTime);
+    if (!depDate) return null;
+    return formatTimeToAMPM(new Date(depDate.getTime() + parseDurationToMinutes(duration) * 60000), timeZone);
+}
+
+async function fetchTransitDirections(origin: string, destination: string, timeZone: string, departureTime?: Date): Promise<Partial<CommuteSegment> | null> {
     if (!GOOGLE_MAPS_API_KEY) throw new Error('Missing Google Maps API Key');
 
     const requestBody: any = {
@@ -222,12 +228,6 @@ async function fetchTransitDirections(origin: string, destination: string, depar
     };
 
     if (departureTime) requestBody.departureTime = departureTime.toISOString();
-
-    // Log request
-    if (origin.includes('Penn') || destination.includes('West St')) {
-        console.log(`\n=== GOOGLE API REQUEST: ${origin} → ${destination} ===`);
-        console.log('Request body:', JSON.stringify(requestBody, null, 2));
-    }
 
     try {
         const response = await fetch(ROUTES_API_URL, {
@@ -249,34 +249,13 @@ async function fetchTransitDirections(origin: string, destination: string, depar
 
         const data = await response.json();
 
-        // Log response
-        if (origin.includes('Penn') || destination.includes('West St')) {
-            console.log(`\n=== GOOGLE API RESPONSE: ${origin} → ${destination} ===`);
-            console.log('Response:', JSON.stringify(data, null, 2));
-        }
-
         if (!data.routes || data.routes.length === 0) return null;
 
-        // Sort routes by duration and pick the fastest
         const sortedRoutes = data.routes.sort((a: any, b: any) => {
             const aDuration = parseInt(a.duration.replace('s', ''));
             const bDuration = parseInt(b.duration.replace('s', ''));
             return aDuration - bDuration;
         });
-
-        // Debug: log all routes returned
-        if (origin.includes('Penn') || destination.includes('West St')) {
-            console.log(`\n=== ALL ROUTES: ${origin} → ${destination} ===`);
-            console.log(`Total routes returned: ${data.routes.length}`);
-            data.routes.forEach((r: any, idx: number) => {
-                const dur = parseInt(r.duration.replace('s', ''));
-                const transitLines = r.legs?.[0]?.steps
-                    ?.filter((s: any) => s.transitDetails)
-                    ?.map((s: any) => s.transitDetails?.transitLine?.name || s.transitDetails?.transitLine?.nameShort)
-                    ?.join(' → ');
-                console.log(`Route ${idx + 1}: ${Math.round(dur / 60)}m - ${transitLines || 'unknown'}`);
-            });
-        }
 
         const route = sortedRoutes[0];
         const leg = route.legs?.[0];
@@ -292,29 +271,8 @@ async function fetchTransitDirections(origin: string, destination: string, depar
         if (transitSteps && transitSteps.length > 0) {
             const first = transitSteps[0].transitDetails?.stopDetails?.departureTime;
             const last = transitSteps[transitSteps.length - 1].transitDetails?.stopDetails?.arrivalTime;
-            if (first) departureTimeStr = new Date(first).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-            if (last) arrivalTimeStr = new Date(last).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-
-            // Debug logging for Penn Station routes
-            if (origin.includes('Penn') || destination.includes('West St')) {
-                console.log(`\n=== TRANSIT DEBUG: ${origin} → ${destination} ===`);
-                console.log('Total duration (seconds):', durationSeconds);
-                console.log('Total duration (formatted):', formatDuration(Math.round(durationSeconds / 60)));
-                console.log('Static duration (seconds):', leg?.staticDuration);
-                console.log('Transit steps count:', transitSteps.length);
-                console.log('First transit departure:', first, '→', departureTimeStr);
-                console.log('Last transit arrival:', last, '→', arrivalTimeStr);
-                console.log('All steps:', JSON.stringify(leg?.steps?.map((s: any) => ({
-                    mode: s.travelMode,
-                    duration: s.staticDuration,
-                    transitLine: s.transitDetails?.transitLine?.name,
-                    headsign: s.transitDetails?.headsign,
-                    departStop: s.transitDetails?.stopDetails?.departureStop?.name,
-                    arrivalStop: s.transitDetails?.stopDetails?.arrivalStop?.name,
-                    departTime: s.transitDetails?.stopDetails?.departureTime,
-                    arrivalTime: s.transitDetails?.stopDetails?.arrivalTime
-                })), null, 2));
-            }
+            if (first) departureTimeStr = formatTimeToAMPM(new Date(first), timeZone);
+            if (last) arrivalTimeStr = formatTimeToAMPM(new Date(last), timeZone);
         }
 
         return {
@@ -361,14 +319,13 @@ function parseTimeToDate(timeStr: string): Date | null {
     return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0);
 }
 
-function calculateArrivalTime(departureTime: string, duration: string): string | null {
-    const depDate = parseTimeToDate(departureTime);
-    if (!depDate) return null;
-    return formatTimeToAMPM(new Date(depDate.getTime() + parseDurationToMinutes(duration) * 60000));
-}
-
-function formatTimeToAMPM(date: Date): string {
-    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).replace(/^0/, '');
+function formatTimeToAMPM(date: Date, timeZone: string): string {
+    return date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: timeZone || 'America/New_York'
+    }).replace(/^0/, '');
 }
 
 function getDepartureTimeDate(segments: CommuteSegment[]): Date {
@@ -419,7 +376,8 @@ async function findNextBus(arrivalTime: Date, direction: 'eastbound' | 'westboun
 
 // ============ HANDLER ============
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-    const { direction, now: clientNowStr } = req.query;
+    const { direction, now: clientNowStr, timeZone: queryTimeZone } = req.query;
+    const timeZone = (queryTimeZone as string) || 'America/New_York';
 
     // Use client time if provided, otherwise server time
     const baseNow = clientNowStr ? new Date(clientNowStr as string) : new Date();
@@ -470,6 +428,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     const transitRes = await fetchTransitDirections(
                         LOCATIONS[segConfig.from].address,
                         LOCATIONS[segConfig.to].address,
+                        timeZone,
                         estimatedArrivalAtSegment
                     );
                     if (transitRes) {
@@ -491,7 +450,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         segment = {
                             mode: 'bus', from: segConfig.fromLabel, to: segConfig.toLabel, duration: busDuration,
                             distance: driveRes?.distance || '30 mi', traffic: `Departs ${nextBus.departureTime}`,
-                            departureTime: nextBus.departureTime, arrivalTime: calculateArrivalTime(nextBus.departureTime, busDuration) || undefined
+                            departureTime: nextBus.departureTime, arrivalTime: calculateArrivalTime(nextBus.departureTime, busDuration, timeZone) || undefined
                         };
                         fixedDepartureTime = parseTimeToDate(nextBus.departureTime) || undefined;
                     } else {
@@ -561,12 +520,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 }
 
                 // Set departure time
-                segment.departureTime = formatTimeToAMPM(currentTime);
+                segment.departureTime = formatTimeToAMPM(currentTime, timeZone);
 
                 // Calculate arrival time
                 const durationMins = parseDurationToMinutes(segment.duration);
                 const arrivalDate = new Date(currentTime.getTime() + durationMins * 60000);
-                segment.arrivalTime = formatTimeToAMPM(arrivalDate);
+                segment.arrivalTime = formatTimeToAMPM(arrivalDate, timeZone);
 
                 // Advance current time to arrival
                 currentTime = arrivalDate;
