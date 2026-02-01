@@ -26,8 +26,8 @@ export const ROUTES_CONFIG: {
     {
       name: 'Via Harrison PATH',
       segments: [
-        { type: 'drive', from: 'home', to: 'harrisonParking', fromLabel: 'Home', toLabel: 'Harrison P' },
-        { type: 'walk', fromLabel: 'Harrison P', toLabel: 'Harrison PATH', duration: '5m' },
+        { type: 'drive', from: 'home', to: 'harrisonParking', fromLabel: 'Home', toLabel: 'Harrison Parking' },
+        { type: 'walk', fromLabel: 'Harrison Parking', toLabel: 'Harrison PATH', duration: '5m' },
         { type: 'transit', from: 'harrisonPath', to: 'wtcPath', fromLabel: 'Harrison', toLabel: 'WTC PATH', mode: 'path' },
         { type: 'walk', fromLabel: 'WTC PATH', toLabel: 'Office', duration: '5m' },
       ],
@@ -70,8 +70,8 @@ export const ROUTES_CONFIG: {
       segments: [
         { type: 'walk', fromLabel: 'Office', toLabel: 'WTC PATH', duration: '5m' },
         { type: 'transit', from: 'wtcPath', to: 'harrisonPath', fromLabel: 'WTC PATH', toLabel: 'Harrison', mode: 'path' },
-        { type: 'walk', fromLabel: 'Harrison PATH', toLabel: 'Harrison P', duration: '5m' },
-        { type: 'drive', from: 'harrisonParking', to: 'home', fromLabel: 'Harrison P', toLabel: 'Home' },
+        { type: 'walk', fromLabel: 'Harrison PATH', toLabel: 'Harrison Parking', duration: '5m' },
+        { type: 'drive', from: 'harrisonParking', to: 'home', fromLabel: 'Harrison Parking', toLabel: 'Home' },
       ],
     },
     // Route 2: Via Hoboken Station
