@@ -495,26 +495,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 const sd = segmentData[i];
                 const segment = { ...sd.segment } as CommuteSegment;
 
-                // If this segment has a fixed departure (transit/bus), use it
-                if (sd.fixedDepartureTime) {
-                    // There may be a wait time between arriving and the transit departing
+                // Check if this segment has a fixed scheduled departure (transit/bus)
+                if (sd.fixedDepartureTime && sd.fixedDepartureTime > currentTime) {
+                    // There's a wait - the transit doesn't leave until the scheduled time
                     currentTime = sd.fixedDepartureTime;
                 }
 
                 // Set departure time
-                if (!segment.departureTime) {
-                    segment.departureTime = formatTimeToAMPM(currentTime);
-                }
+                segment.departureTime = formatTimeToAMPM(currentTime);
 
                 // Calculate arrival time
                 const durationMins = parseDurationToMinutes(segment.duration);
-                if (!segment.arrivalTime) {
-                    const arrivalDate = new Date(currentTime.getTime() + durationMins * 60000);
-                    segment.arrivalTime = formatTimeToAMPM(arrivalDate);
-                }
+                const arrivalDate = new Date(currentTime.getTime() + durationMins * 60000);
+                segment.arrivalTime = formatTimeToAMPM(arrivalDate);
 
                 // Advance current time to arrival
-                currentTime = parseTimeToDate(segment.arrivalTime!) || new Date(currentTime.getTime() + durationMins * 60000);
+                currentTime = arrivalDate;
 
                 segments.push(segment);
             }
