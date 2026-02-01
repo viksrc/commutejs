@@ -124,19 +124,31 @@ export async function fetchSchedule(): Promise<CachedScheduleData> {
     // Parse each schedule
     console.log('🔍 Parsing weekday eastbound...');
     const weekdayEastTimes = parseScheduleHTML(weekdayEastHTML, 'Parsippany (Waterview P&R)');
+    console.log(`  ✓ Parsed ${weekdayEastTimes.length} raw times: ${weekdayEastTimes.slice(0, 3).join(', ')}...`);
+
     console.log('🔍 Parsing weekday westbound...');
     const weekdayWestTimes = parseScheduleHTML(weekdayWestHTML, 'NY PABT');
+    console.log(`  ✓ Parsed ${weekdayWestTimes.length} raw times: ${weekdayWestTimes.slice(0, 3).join(', ')}...`);
+
     console.log('🔍 Parsing weekend eastbound...');
     const weekendEastTimes = parseScheduleHTML(weekendEastHTML, 'Parsippany (Waterview P&R)');
+    console.log(`  ✓ Parsed ${weekendEastTimes.length} raw times: ${weekendEastTimes.join(', ')}`);
+
     console.log('🔍 Parsing weekend westbound...');
     // Weekend westbound uses "LEAVES FROM GATE #" instead of "NY PABT"
     const weekendWestTimes = parseScheduleHTML(weekendWestHTML, 'LEAVES FROM GATE');
+    console.log(`  ✓ Parsed ${weekendWestTimes.length} raw times: ${weekendWestTimes.join(', ')}`);
 
     // Add AM/PM
+    console.log('⏰ Adding AM/PM to times...');
     const weekdayEastbound = addAmPm(weekdayEastTimes, 'eastbound', false);
+    console.log(`  Weekday East: ${weekdayEastbound.length} times with AM/PM`);
     const weekdayWestbound = addAmPm(weekdayWestTimes, 'westbound', false);
+    console.log(`  Weekday West: ${weekdayWestbound.length} times with AM/PM`);
     const weekendEastbound = addAmPm(weekendEastTimes, 'eastbound', true);
+    console.log(`  Weekend East: ${weekendEastbound.length} times with AM/PM: ${weekendEastbound.join(', ')}`);
     const weekendWestbound = addAmPm(weekendWestTimes, 'westbound', true);
+    console.log(`  Weekend West: ${weekendWestbound.length} times with AM/PM: ${weekendWestbound.join(', ')}`);
 
     const scheduleData: CachedScheduleData = {
       timestamp: Date.now(),

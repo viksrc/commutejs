@@ -1,0 +1,91 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e4]:
+  - heading "Commute Info" [level=1] [ref=e6]
+  - generic [ref=e7]:
+    - button "To Work" [ref=e8] [cursor=pointer]
+    - button "To Home" [active] [ref=e9] [cursor=pointer]
+  - generic [ref=e10] [cursor=pointer]:
+    - generic [ref=e11]:
+      - generic [ref=e12]:
+        - generic [ref=e13]:
+          - generic [ref=e14]: ★
+          - generic [ref=e15]: Via Harrison PATH
+        - generic [ref=e16]:
+          - img [ref=e17]
+          - generic [ref=e19]: 1h 11m
+      - generic [ref=e20]:
+        - button [ref=e21]:
+          - img [ref=e22]
+        - generic [ref=e24]: "Leave: 12m"
+        - generic [ref=e25]: "ETA: 9:15 AM"
+    - generic [ref=e26]:
+      - generic [ref=e27]:
+        - img [ref=e30]
+        - generic [ref=e33]:
+          - generic [ref=e34]: Office → WTC PATH
+          - generic [ref=e35]:
+            - generic [ref=e36]: Walk
+            - generic [ref=e37]: •
+            - generic [ref=e38]: 5m
+        - button [ref=e39]:
+          - img [ref=e40]
+      - generic [ref=e42]:
+        - img [ref=e45]
+        - generic [ref=e48]:
+          - generic [ref=e49]: WTC PATH → Harrison
+          - generic [ref=e50]:
+            - generic [ref=e51]: PATH
+            - generic [ref=e52]: •
+            - generic [ref=e53]: 31m
+            - generic [ref=e54]: •
+            - generic [ref=e55]: Departs 08:27 AM
+        - button [ref=e56]:
+          - img [ref=e57]
+      - generic [ref=e59]:
+        - img [ref=e62]
+        - generic [ref=e65]:
+          - generic [ref=e66]: Harrison PATH → Harrison P
+          - generic [ref=e67]:
+            - generic [ref=e68]: Walk
+            - generic [ref=e69]: •
+            - generic [ref=e70]: 5m
+        - button [ref=e71]:
+          - img [ref=e72]
+      - generic [ref=e74]:
+        - img [ref=e77]
+        - generic [ref=e79]:
+          - generic [ref=e80]: Harrison P → Home
+          - generic [ref=e81]:
+            - generic [ref=e82]: Drive
+            - generic [ref=e83]: •
+            - generic [ref=e84]: 30m
+            - generic [ref=e85]: •
+            - generic [ref=e86]: Light
+        - button [ref=e87]:
+          - img [ref=e88]
+  - generic [ref=e91] [cursor=pointer]:
+    - generic [ref=e92]:
+      - generic [ref=e94]: Via NY Penn Station
+      - generic [ref=e95]:
+        - img [ref=e96]
+        - generic [ref=e98]: 2h 14m
+    - generic [ref=e99]:
+      - button [ref=e100]:
+        - img [ref=e101]
+      - generic [ref=e103]: "Leave: 17m"
+      - generic [ref=e104]: "ETA: 10:18 AM"
+  - generic [ref=e106] [cursor=pointer]:
+    - generic [ref=e107]:
+      - generic [ref=e109]: Via Hoboken Station
+      - generic [ref=e110]:
+        - img [ref=e111]
+        - generic [ref=e113]: 2h 55m
+    - generic [ref=e114]:
+      - button [ref=e115]:
+        - img [ref=e116]
+      - generic [ref=e118]: "Leave: 17m"
+      - generic [ref=e119]: "ETA: 10:59 AM"
+  - paragraph [ref=e120]: Updated 8:04:56 AM
+```
