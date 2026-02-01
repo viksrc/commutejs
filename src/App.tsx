@@ -77,12 +77,6 @@ const ChevronIcon = ({ expanded }: { expanded: boolean }) => (
   </svg>
 );
 
-const ClockIcon = () => (
-  <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
-    <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
-  </svg>
-);
-
 // Helper component to get icon for transportation mode
 function ModeIcon({ mode }: { mode?: 'drive' | 'walk' | 'train' | 'path' | 'bus' }) {
   switch (mode) {
@@ -290,11 +284,15 @@ function App() {
     window.matchMedia('(prefers-color-scheme: dark)').matches
   );
   const [direction, setDirection] = useState<'toOffice' | 'toHome'>('toOffice');
-  const [commuteData, setCommuteData] = useState<CommuteData | null>(null);
+  const [toOfficeData, setToOfficeData] = useState<CommuteData | null>(null);
+  const [toHomeData, setToHomeData] = useState<CommuteData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [expandedRoutes, setExpandedRoutes] = useState<Set<number>>(new Set()); // No routes expanded by default
+
+  // Get current commute data based on direction
+  const commuteData = direction === 'toOffice' ? toOfficeData : toHomeData;
 
   // Listen for dark mode changes
   useEffect(() => {
@@ -311,8 +309,6 @@ function App() {
 
   // Fetch commute data from backend API
   const fetchCommuteData = async (dir: 'toOffice' | 'toHome') => {
-    setLoading(true);
-    setError(null);
     try {
       const response = await fetch(`/api/commute?direction=${dir}`);
       if (!response.ok) {
@@ -334,20 +330,42 @@ function App() {
         lastUpdated: new Date().toLocaleTimeString(),
       };
 
-      setCommuteData(data);
+      return data;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load commute data';
       console.error('Error fetching commute data:', err);
+      throw new Error(errorMessage);
+    }
+  };
+
+  // Fetch both directions
+  const fetchBothDirections = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Fetch both directions in parallel
+      const [officeData, homeData] = await Promise.all([
+        fetchCommuteData('toOffice'),
+        fetchCommuteData('toHome'),
+      ]);
+      setToOfficeData(officeData);
+      setToHomeData(homeData);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load commute data';
       setError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
-  // Load data on mount and when direction changes
+  // Fetch both directions on mount
   useEffect(() => {
-    fetchCommuteData(direction);
-    setExpandedRoutes(new Set()); // No routes expanded by default
+    fetchBothDirections();
+  }, []);
+
+  // Reset expanded routes when direction changes
+  useEffect(() => {
+    setExpandedRoutes(new Set());
   }, [direction]);
 
 
@@ -397,7 +415,7 @@ function App() {
           <div className="error-container">
             <p className="error-message">Failed to load routes</p>
             <p className="error-details">{error}</p>
-            <button className="retry-button" onClick={() => fetchCommuteData(direction)}>
+            <button className="retry-button" onClick={fetchBothDirections}>
               Retry
             </button>
           </div>
@@ -415,17 +433,11 @@ function App() {
                 >
                   {/* Route Header */}
                   <div className="route-header">
-                    <div>
-                      <div className="route-name-container">
+                    <div className="route-name-container">
+                      <div className="name-with-star">
                         {route.isBest && <span className="star-icon">★</span>}
                         <span className="route-name">{route.name}</span>
                       </div>
-                      <div className="route-info">
-                        <ClockIcon />
-                        <span className="total-time">{route.totalTime}</span>
-                      </div>
-                    </div>
-                    <div className="time-container">
                       <button
                         className={`expand-button ${isExpanded ? 'expanded' : ''}`}
                         onClick={(e) => {
@@ -435,12 +447,14 @@ function App() {
                       >
                         <ChevronIcon expanded={isExpanded} />
                       </button>
-                      {route.leaveInMins !== undefined && (
-                        <span className={`leave-time ${route.leaveInMins <= 0 ? 'urgent' : route.leaveInMins <= 5 ? 'soon' : ''}`}>
-                          Leave: {formatLeaveTime(route.leaveInMins)}
-                        </span>
-                      )}
-                      <span className="eta">ETA: {route.eta}</span>
+                    </div>
+                    <div className="route-stats-row">
+                      <span className="eta">ETA: {route.eta || '-'}</span>
+                      <span className="duration">{route.totalTime || '-'}</span>
+                      <span className={`leave-time ${route.leaveInMins !== undefined ? (route.leaveInMins <= 0 ? 'urgent' : route.leaveInMins <= 5 ? 'soon' : '') : ''}`}>
+                        <span className="leave-label">Leave:</span>
+                        <span className="leave-value">{route.leaveInMins !== undefined ? formatLeaveTime(route.leaveInMins) : '-'}</span>
+                      </span>
                     </div>
                   </div>
 
@@ -465,9 +479,9 @@ function App() {
                               {segment.from} → {segment.to}
                             </div>
                             <div className="segment-details">
-                              <span>{getModeLabel(segment.mode)}</span>
+                              <span className="segment-mode">{getModeLabel(segment.mode)}</span>
                               <span className="separator">•</span>
-                              <span>{segment.duration}</span>
+                              <span className="segment-duration">{segment.duration}</span>
                               {/* Show time range for all segments */}
                               {segment.departureTime && (
                                 <>

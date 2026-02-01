@@ -117,7 +117,9 @@ body {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Error State */
@@ -185,14 +187,15 @@ body {
 /* Route Header */
 .route-header {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .route-name-container {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  width: 100%;
 }
 
 .star-icon {
@@ -200,39 +203,16 @@ body {
   font-size: 16px;
 }
 
-.expand-icon {
-  display: none;
+.name-with-star {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .route-name {
   font-size: 17px;
   font-weight: 600;
   color: var(--text-primary);
-}
-
-.route-info {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 4px;
-}
-
-.clock-icon {
-  color: var(--text-secondary);
-  font-size: 14px;
-}
-
-.total-time {
-  font-size: 15px;
-  font-weight: 400;
-  color: var(--text-secondary);
-}
-
-.time-container {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
 }
 
 .expand-button {
@@ -263,16 +243,56 @@ body {
   transform: rotate(180deg);
 }
 
+/* Route Stats Row - ETA, Duration, Leave In */
+.route-stats-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding-top: 2px;
+}
+
+.stat-separator {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
 .eta {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--blue);
+  width: 100px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.duration {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  width: 60px;
+  text-align: right;
+  flex-shrink: 0;
 }
 
 .leave-time {
   font-size: 14px;
   font-weight: 600;
   color: var(--green);
+  margin-left: auto;
+  width: 105px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  white-space: nowrap;
+}
+
+.leave-label {
+  min-width: 50px;
+}
+
+.leave-value {
+  width: 60px;
+  text-align: right;
 }
 
 .leave-time.soon {
@@ -281,10 +301,6 @@ body {
 
 .leave-time.urgent {
   color: #ff3b30;
-}
-
-.time-separator {
-  display: none;
 }
 
 /* Segments Container */
@@ -347,13 +363,24 @@ body {
 .segment-details {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   font-size: 14px;
   color: var(--text-secondary);
 }
 
 .segment-details .separator {
   color: var(--text-tertiary);
+}
+
+.segment-mode {
+  min-width: 34px;
+  display: inline-block;
+}
+
+.segment-duration {
+  min-width: 30px;
+  display: inline-block;
+  text-align: left;
 }
 
 .segment-traffic {
@@ -376,10 +403,6 @@ body {
 .segment-traffic.heavy,
 .segment-traffic.warning {
   color: #ff3b30;
-}
-
-.segment-duration {
-  display: none;
 }
 
 .map-button {
