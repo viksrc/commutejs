@@ -281,6 +281,7 @@ function App() {
   const [direction, setDirection] = useState<'toOffice' | 'toHome'>('toOffice');
   const [commuteData, setCommuteData] = useState<CommuteData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const [expandedRoutes, setExpandedRoutes] = useState<Set<number>>(new Set()); // No routes expanded by default
 
@@ -300,10 +301,12 @@ function App() {
   // Fetch commute data from backend API
   const fetchCommuteData = async (dir: 'toOffice' | 'toHome') => {
     setLoading(true);
+    setError(null);
     try {
       const response = await fetch(`/api/commute?direction=${dir}`);
       if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `API error: ${response.status}`);
       }
 
       const apiData = await response.json();
@@ -321,8 +324,10 @@ function App() {
       };
 
       setCommuteData(data);
-    } catch (error) {
-      console.error('Error fetching commute data:', error);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load commute data';
+      console.error('Error fetching commute data:', err);
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -376,6 +381,14 @@ function App() {
         {loading && !commuteData ? (
           <div className="loading-container">
             <div className="spinner"></div>
+          </div>
+        ) : error ? (
+          <div className="error-container">
+            <p className="error-message">Failed to load routes</p>
+            <p className="error-details">{error}</p>
+            <button className="retry-button" onClick={() => fetchCommuteData(direction)}>
+              Retry
+            </button>
           </div>
         ) : commuteData ? (
           <>
