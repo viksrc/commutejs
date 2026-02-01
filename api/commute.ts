@@ -254,8 +254,8 @@ async function fetchTransitDirections(origin: string, destination: string, depar
         if (transitSteps && transitSteps.length > 0) {
             const first = transitSteps[0].transitDetails?.stopDetails?.departureTime;
             const last = transitSteps[transitSteps.length - 1].transitDetails?.stopDetails?.arrivalTime;
-            if (first) departureTimeStr = new Date(first).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-            if (last) arrivalTimeStr = new Date(last).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+            if (first) departureTimeStr = formatTimeToAMPM(new Date(first));
+            if (last) arrivalTimeStr = formatTimeToAMPM(new Date(last));
         }
 
         return {
@@ -296,8 +296,27 @@ function parseTimeToDate(timeStr: string): Date | null {
     const period = match[3].toUpperCase();
     if (period === 'PM' && hours !== 12) hours += 12;
     else if (period === 'AM' && hours === 12) hours = 0;
+
     const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0);
+    // Get current date components in NY
+    const nyStr = now.toLocaleString('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' });
+    const [month, day, year] = nyStr.split('/');
+
+    // NY is either -05:00 (EST) or -04:00 (EDT)
+    // We can let the Date constructor handle the "local" time by creating a string and 
+    // simply appending the current NY offset, but simpler:
+    // Create a date in local time, then adjust it to represent that same wall-clock time in NY
+    const date = new Date(`${year}-${month}-${day}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`);
+
+    // If we're on a server (UTC) or local (EST), we want this 'date' to represent 'wall clock' NY.
+    // The most reliable way: use a formatter to see what the difference is.
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        hour: 'numeric',
+        hour12: false
+    });
+
+    return date;
 }
 
 function calculateArrivalTime(departureTime: string, duration: string): string | null {
@@ -307,7 +326,12 @@ function calculateArrivalTime(departureTime: string, duration: string): string |
 }
 
 function formatTimeToAMPM(date: Date): string {
-    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).replace(/^0/, '');
+    return date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: 'America/New_York'
+    }).replace(/^0/, '');
 }
 
 function formatDuration(minutes: number): string {
@@ -329,12 +353,16 @@ function parseTimeMinutes(timeStr: string): number {
 
 async function findNextBus(arrivalTime: Date, direction: 'eastbound' | 'westbound'): Promise<{ departureTime: string; waitMinutes: number } | null> {
     const schedule = await getSchedule();
-    const day = arrivalTime.getDay();
+
+    // Get NY time components for the arrival time
+    const nyTimeString = arrivalTime.toLocaleString('en-US', { timeZone: 'America/New_York', hour12: false });
+    const nyDate = new Date(nyTimeString);
+    const day = nyDate.getDay();
     const type = (day === 0 || day === 6) ? 'weekend' : 'weekday';
     const times = schedule.schedules[type][direction];
     if (!times) return null;
 
-    const arrivalMinutes = arrivalTime.getHours() * 60 + arrivalTime.getMinutes();
+    const arrivalMinutes = nyDate.getHours() * 60 + nyDate.getMinutes();
     for (const timeStr of times) {
         const busMinutes = parseTimeMinutes(timeStr);
         if (busMinutes >= arrivalMinutes) return { departureTime: timeStr, waitMinutes: busMinutes - arrivalMinutes };
