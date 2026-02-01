@@ -12,15 +12,23 @@ const SCHEDULE_IDS = {
 };
 
 // Use our Vercel proxy to avoid CORS issues
-const LAKELAND_BASE_URL = '/api/lakeland-bus';
+// In local dev, use deployed Vercel URL since serverless functions don't work in Vite
+const LAKELAND_BASE_URL = import.meta.env.DEV
+  ? 'https://commutejs.vercel.app/api/lakeland-bus'
+  : '/api/lakeland-bus';
 
 /**
  * Parse schedule HTML to extract times for a specific stop
  */
 function parseScheduleHTML(html: string, stopName: string): string[] {
   console.log(`  Looking for stop: "${stopName}"`);
+  console.log(`  HTML length: ${html.length} chars`);
+
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
+
+  console.log(`  Document parsed, title: "${doc.title}"`);
+  console.log(`  Document body length: ${doc.body?.innerHTML.length || 0} chars`);
 
   // Find the row containing the stop name
   const rows = Array.from(doc.querySelectorAll('tr.stop-schedule'));
@@ -40,7 +48,15 @@ function parseScheduleHTML(html: string, stopName: string): string[] {
       });
     });
   } else {
-    console.warn('  No rows found with class "stop-schedule". HTML snippet:', html.substring(0, 500));
+    console.warn('  ❌ NO ROWS found with class "stop-schedule"!');
+    console.warn('  First 1000 chars of HTML:', html.substring(0, 1000));
+
+    // Try to find any tr elements
+    const allTrs = doc.querySelectorAll('tr');
+    console.warn(`  Total <tr> elements found: ${allTrs.length}`);
+    if (allTrs.length > 0) {
+      console.warn(`  First <tr> classes: ${allTrs[0].className}`);
+    }
   }
 
   const stopRow = rows.find(row => {

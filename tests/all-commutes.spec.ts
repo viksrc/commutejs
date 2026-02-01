@@ -140,20 +140,29 @@ test.describe('All Commute Routes', () => {
   });
 
   test('should verify bus schedule is being fetched', async ({ page }) => {
-    console.log('🧪 Testing bus schedule fetch...\n');
+    console.log('🧪 Testing bus schedule fetch with FRESH data...\n');
 
     // Listen for console logs
     const consoleLogs: string[] = [];
     page.on('console', msg => {
       const text = msg.text();
       consoleLogs.push(text);
-      if (text.includes('🚌') || text.includes('bus') || text.includes('Lakeland')) {
+      if (text.includes('🚌') || text.includes('Parsed') || text.includes('Adding AM/PM') || text.includes('bus') || text.includes('Lakeland')) {
         console.log(`  ${text}`);
       }
     });
 
     await page.goto('http://localhost:5173');
-    await page.waitForSelector('.route-card', { timeout: 30000 });
+
+    // Clear localStorage to force fresh fetch
+    await page.evaluate(() => {
+      console.log('🗑️  Clearing localStorage to force fresh schedule fetch...');
+      localStorage.clear();
+    });
+
+    // Reload to fetch fresh schedule
+    await page.reload();
+    await page.waitForSelector('.route-card', { timeout: 60000 });
 
     // Wait a bit for all logs
     await page.waitForTimeout(2000);
