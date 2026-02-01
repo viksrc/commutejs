@@ -402,24 +402,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const routes: RouteOption[] = [];
 
         for (const routeConfig of routesConfig) {
-            const segments: CommuteSegment[] = [];
             let skipRoute = false;
+
+            // === PASS 1: Collect all segments with durations (times not yet set) ===
+            interface SegmentData {
+                segment: Omit<CommuteSegment, 'departureTime' | 'arrivalTime'> & { departureTime?: string; arrivalTime?: string };
+                fixedDepartureTime?: Date; // For transit/bus segments with schedules
+            }
+            const segmentData: SegmentData[] = [];
+            let estimatedTimeFromStart = 0; // Running total of time from start
 
             for (const segConfig of routeConfig.segments) {
                 if (skipRoute) break;
-                let segment: CommuteSegment | null = null;
-                const startTimeDate = getDepartureTimeDate(segments);
+                let segment: Partial<CommuteSegment> | null = null;
+                let fixedDepartureTime: Date | undefined;
+
+                // Estimate arrival time at this segment (for transit lookups)
+                const estimatedArrivalAtSegment = new Date(Date.now() + estimatedTimeFromStart * 60000);
 
                 if (segConfig.type === 'drive') {
                     const driveRes = await fetchDrivingDirections(LOCATIONS[segConfig.from].address, LOCATIONS[segConfig.to].address);
-                    if (driveRes) segment = { ...driveRes, mode: 'drive', from: segConfig.fromLabel, to: segConfig.toLabel } as CommuteSegment;
+                    if (driveRes) {
+                        segment = { ...driveRes, mode: 'drive', from: segConfig.fromLabel, to: segConfig.toLabel };
+                    }
                 } else if (segConfig.type === 'walk') {
                     segment = { mode: 'walk', from: segConfig.fromLabel, to: segConfig.toLabel, duration: segConfig.duration, distance: '-', traffic: 'Walk' };
                 } else if (segConfig.type === 'transit') {
-                    const transitRes = await fetchTransitDirections(LOCATIONS[segConfig.from].address, LOCATIONS[segConfig.to].address, startTimeDate);
-                    if (transitRes) segment = { ...transitRes, mode: segConfig.mode, from: segConfig.fromLabel, to: segConfig.toLabel } as CommuteSegment;
+                    const transitRes = await fetchTransitDirections(LOCATIONS[segConfig.from].address, LOCATIONS[segConfig.to].address, estimatedArrivalAtSegment);
+                    if (transitRes) {
+                        segment = { ...transitRes, mode: segConfig.mode, from: segConfig.fromLabel, to: segConfig.toLabel };
+                        // Parse the fixed departure time from transit schedule
+                        if (transitRes.departureTime) {
+                            fixedDepartureTime = parseTimeToDate(transitRes.departureTime) || undefined;
+                        }
+                    }
                 } else if (segConfig.type === 'bus') {
-                    const nextBus = await findNextBus(startTimeDate, segConfig.direction);
+                    const nextBus = await findNextBus(estimatedArrivalAtSegment, segConfig.direction);
                     if (nextBus) {
                         const driveRes = await fetchDrivingDirections(LOCATIONS[segConfig.from].address, LOCATIONS[segConfig.to].address);
                         const busDuration = driveRes?.duration || '45m';
@@ -428,17 +446,80 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                             distance: driveRes?.distance || '30 mi', traffic: `Departs ${nextBus.departureTime}`,
                             departureTime: nextBus.departureTime, arrivalTime: calculateArrivalTime(nextBus.departureTime, busDuration) || undefined
                         };
-                    } else skipRoute = true;
+                        fixedDepartureTime = parseTimeToDate(nextBus.departureTime) || undefined;
+                    } else {
+                        skipRoute = true;
+                    }
                 }
 
-                if (segment) {
-                    if (!segment.departureTime) segment.departureTime = formatTimeToAMPM(startTimeDate);
-                    if (!segment.arrivalTime) segment.arrivalTime = calculateArrivalTime(segment.departureTime, segment.duration) || undefined;
-                    segments.push(segment);
+                if (segment && segment.duration) {
+                    segmentData.push({ segment: segment as CommuteSegment, fixedDepartureTime });
+                    estimatedTimeFromStart += parseDurationToMinutes(segment.duration);
                 }
             }
 
-            if (!skipRoute && segments.length > 0) {
+            if (skipRoute || segmentData.length === 0) continue;
+
+            // === PASS 2: Find first fixed transit time and calculate backwards ===
+            let firstFixedTransitIndex = -1;
+            let firstFixedTransitTime: Date | null = null;
+
+            for (let i = 0; i < segmentData.length; i++) {
+                if (segmentData[i].fixedDepartureTime) {
+                    firstFixedTransitIndex = i;
+                    firstFixedTransitTime = segmentData[i].fixedDepartureTime!;
+                    break;
+                }
+            }
+
+            // Calculate the ideal start time by working backwards from the first transit
+            let idealStartTime: Date;
+            if (firstFixedTransitTime && firstFixedTransitIndex > 0) {
+                // Sum up durations of all segments BEFORE the first transit
+                let timeToReachTransit = 0;
+                for (let i = 0; i < firstFixedTransitIndex; i++) {
+                    timeToReachTransit += parseDurationToMinutes(segmentData[i].segment.duration);
+                }
+                // Start time = transit departure - time to reach it
+                idealStartTime = new Date(firstFixedTransitTime.getTime() - timeToReachTransit * 60000);
+            } else {
+                // No fixed transit, just start now
+                idealStartTime = new Date();
+            }
+
+            // === PASS 3: Assign times to all segments starting from idealStartTime ===
+            const segments: CommuteSegment[] = [];
+            let currentTime = idealStartTime;
+
+            for (let i = 0; i < segmentData.length; i++) {
+                const sd = segmentData[i];
+                const segment = { ...sd.segment } as CommuteSegment;
+
+                // If this segment has a fixed departure (transit/bus), use it
+                if (sd.fixedDepartureTime) {
+                    // There may be a wait time between arriving and the transit departing
+                    currentTime = sd.fixedDepartureTime;
+                }
+
+                // Set departure time
+                if (!segment.departureTime) {
+                    segment.departureTime = formatTimeToAMPM(currentTime);
+                }
+
+                // Calculate arrival time
+                const durationMins = parseDurationToMinutes(segment.duration);
+                if (!segment.arrivalTime) {
+                    const arrivalDate = new Date(currentTime.getTime() + durationMins * 60000);
+                    segment.arrivalTime = formatTimeToAMPM(arrivalDate);
+                }
+
+                // Advance current time to arrival
+                currentTime = parseTimeToDate(segment.arrivalTime!) || new Date(currentTime.getTime() + durationMins * 60000);
+
+                segments.push(segment);
+            }
+
+            if (segments.length > 0) {
                 let totalMinutes = 0;
                 if (segments[0].departureTime && segments[segments.length - 1].arrivalTime) {
                     totalMinutes = parseTimeMinutes(segments[segments.length - 1].arrivalTime!) - parseTimeMinutes(segments[0].departureTime);
