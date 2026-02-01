@@ -1,6 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getSchedule } from './services/lakelandBus.js';
-import type { CachedScheduleData } from './services/lakelandBus.js';
 
 // ============ TYPES ============
 interface CommuteSegment {
@@ -152,10 +151,7 @@ const GOOGLE_MAPS_API_KEY = process.env.VITE_GOOGLE_MAPS_API_KEY || process.env.
 const ROUTES_API_URL = 'https://routes.googleapis.com/directions/v2:computeRoutes';
 
 async function fetchDrivingDirections(origin: string, destination: string): Promise<Partial<CommuteSegment> | null> {
-    if (!GOOGLE_MAPS_API_KEY) {
-        console.error('Google Maps API Key is missing');
-        throw new Error('Missing Google Maps API Key');
-    }
+    if (!GOOGLE_MAPS_API_KEY) throw new Error('Missing Google Maps API Key');
 
     const requestBody = {
         origin: { address: origin },
@@ -180,11 +176,7 @@ async function fetchDrivingDirections(origin: string, destination: string): Prom
             body: JSON.stringify(requestBody),
         });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`Google Driving API error (${response.status}):`, errorText);
-            return null;
-        }
+        if (!response.ok) return null;
 
         const data = await response.json();
         if (!data.routes || data.routes.length === 0) return null;
@@ -208,13 +200,7 @@ async function fetchDrivingDirections(origin: string, destination: string): Prom
     }
 }
 
-function calculateArrivalTime(departureTime: string, duration: string, timeZone: string): string | null {
-    const depDate = parseTimeToDate(departureTime);
-    if (!depDate) return null;
-    return formatTimeToAMPM(new Date(depDate.getTime() + parseDurationToMinutes(duration) * 60000), timeZone);
-}
-
-async function fetchTransitDirections(origin: string, destination: string, timeZone: string, departureTime?: Date): Promise<Partial<CommuteSegment> | null> {
+async function fetchTransitDirections(origin: string, destination: string, departureTime?: Date): Promise<Partial<CommuteSegment> | null> {
     if (!GOOGLE_MAPS_API_KEY) throw new Error('Missing Google Maps API Key');
 
     const requestBody: any = {
@@ -241,16 +227,13 @@ async function fetchTransitDirections(origin: string, destination: string, timeZ
             body: JSON.stringify(requestBody),
         });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`Google Transit API error (${response.status}):`, errorText);
-            return null;
-        }
+        if (!response.ok) return null;
 
         const data = await response.json();
 
         if (!data.routes || data.routes.length === 0) return null;
 
+        // Sort routes by duration and pick the fastest
         const sortedRoutes = data.routes.sort((a: any, b: any) => {
             const aDuration = parseInt(a.duration.replace('s', ''));
             const bDuration = parseInt(b.duration.replace('s', ''));
@@ -271,8 +254,8 @@ async function fetchTransitDirections(origin: string, destination: string, timeZ
         if (transitSteps && transitSteps.length > 0) {
             const first = transitSteps[0].transitDetails?.stopDetails?.departureTime;
             const last = transitSteps[transitSteps.length - 1].transitDetails?.stopDetails?.arrivalTime;
-            if (first) departureTimeStr = formatTimeToAMPM(new Date(first), timeZone);
-            if (last) arrivalTimeStr = formatTimeToAMPM(new Date(last), timeZone);
+            if (first) departureTimeStr = new Date(first).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+            if (last) arrivalTimeStr = new Date(last).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
         }
 
         return {
@@ -298,8 +281,6 @@ function getTrafficStatus(staticDuration: number, actualDuration: number): strin
     return `Severe delays (+${Math.round((actualDuration - staticDuration) / 60)} min)`;
 }
 
-// Bus schedule logic moved to ./services/lakelandBus.ts
-
 // ============ HELPERS ============
 function parseDurationToMinutes(duration: string): number {
     const h = duration.match(/(\d+)h/);
@@ -319,27 +300,14 @@ function parseTimeToDate(timeStr: string): Date | null {
     return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0);
 }
 
-function formatTimeToAMPM(date: Date, timeZone: string): string {
-    return date.toLocaleTimeString('en-US', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-        timeZone: timeZone || 'America/New_York'
-    }).replace(/^0/, '');
+function calculateArrivalTime(departureTime: string, duration: string): string | null {
+    const depDate = parseTimeToDate(departureTime);
+    if (!depDate) return null;
+    return formatTimeToAMPM(new Date(depDate.getTime() + parseDurationToMinutes(duration) * 60000));
 }
 
-function getDepartureTimeDate(segments: CommuteSegment[]): Date {
-    const now = new Date();
-    if (segments.length > 0) {
-        const last = segments[segments.length - 1];
-        if (last.arrivalTime) {
-            const parsed = parseTimeToDate(last.arrivalTime);
-            if (parsed) return parsed;
-        }
-    }
-    let total = 0;
-    segments.forEach(s => { total += parseDurationToMinutes(s.duration); });
-    return new Date(now.getTime() + total * 60000);
+function formatTimeToAMPM(date: Date): string {
+    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).replace(/^0/, '');
 }
 
 function formatDuration(minutes: number): string {
@@ -376,11 +344,7 @@ async function findNextBus(arrivalTime: Date, direction: 'eastbound' | 'westboun
 
 // ============ HANDLER ============
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-    const { direction, now: clientNowStr, timeZone: queryTimeZone } = req.query;
-    const timeZone = (queryTimeZone as string) || 'America/New_York';
-
-    // Use client time if provided, otherwise server time
-    const baseNow = clientNowStr ? new Date(clientNowStr as string) : new Date();
+    const { direction } = req.query;
 
     if (direction !== 'toOffice' && direction !== 'toHome') {
         return res.status(400).json({ error: 'Invalid direction. Use toOffice or toHome.' });
@@ -410,7 +374,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 let segmentHasError = false;
 
                 // Estimate arrival time at this segment (for transit lookups)
-                const estimatedArrivalAtSegment = new Date(baseNow.getTime() + estimatedTimeFromStart * 60000);
+                const estimatedArrivalAtSegment = new Date(Date.now() + estimatedTimeFromStart * 60000);
 
                 if (segConfig.type === 'drive') {
                     const driveRes = await fetchDrivingDirections(LOCATIONS[segConfig.from].address, LOCATIONS[segConfig.to].address);
@@ -428,7 +392,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     const transitRes = await fetchTransitDirections(
                         LOCATIONS[segConfig.from].address,
                         LOCATIONS[segConfig.to].address,
-                        timeZone,
                         estimatedArrivalAtSegment
                     );
                     if (transitRes) {
@@ -450,7 +413,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         segment = {
                             mode: 'bus', from: segConfig.fromLabel, to: segConfig.toLabel, duration: busDuration,
                             distance: driveRes?.distance || '30 mi', traffic: `Departs ${nextBus.departureTime}`,
-                            departureTime: nextBus.departureTime, arrivalTime: calculateArrivalTime(nextBus.departureTime, busDuration, timeZone) || undefined
+                            departureTime: nextBus.departureTime, arrivalTime: calculateArrivalTime(nextBus.departureTime, busDuration) || undefined
                         };
                         fixedDepartureTime = parseTimeToDate(nextBus.departureTime) || undefined;
                     } else {
@@ -520,12 +483,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 }
 
                 // Set departure time
-                segment.departureTime = formatTimeToAMPM(currentTime, timeZone);
+                segment.departureTime = formatTimeToAMPM(currentTime);
 
                 // Calculate arrival time
                 const durationMins = parseDurationToMinutes(segment.duration);
                 const arrivalDate = new Date(currentTime.getTime() + durationMins * 60000);
-                segment.arrivalTime = formatTimeToAMPM(arrivalDate, timeZone);
+                segment.arrivalTime = formatTimeToAMPM(arrivalDate);
 
                 // Advance current time to arrival
                 currentTime = arrivalDate;
@@ -540,25 +503,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 } else {
                     let totalMinutes = 0;
                     if (segments[0].departureTime && segments[segments.length - 1].arrivalTime) {
-                        const dep = parseTimeToDate(segments[0].departureTime);
-                        const arr = parseTimeToDate(segments[segments.length - 1].arrivalTime!);
-                        if (dep && arr) {
-                            let diff = (arr.getTime() - dep.getTime()) / 60000;
-                            if (diff < 0) diff += 1440; // Add 24 hours if crossed midnight
-                            totalMinutes = Math.round(diff);
-                        }
+                        totalMinutes = parseTimeMinutes(segments[segments.length - 1].arrivalTime!) - parseTimeMinutes(segments[0].departureTime);
+                        if (totalMinutes < 0) totalMinutes += 1440; // OBJECTIVELY NECESSARY FIX
                     }
                     routes.push({ name: routeConfig.name, segments, totalTime: formatDuration(totalMinutes), eta: segments[segments.length - 1].arrivalTime || 'Unknown', isBest: false });
                 }
             }
         }
 
-        // Sort routes: valid routes by ETA (earliest arrival first), error routes at end
+        // Sort routes: valid routes by duration, error routes at end
         routes.sort((a, b) => {
             if (a.hasError && !b.hasError) return 1;
             if (!a.hasError && b.hasError) return -1;
             if (a.hasError && b.hasError) return 0;
-            return parseTimeMinutes(a.eta || '11:59 PM') - parseTimeMinutes(b.eta || '11:59 PM');
+            return parseDurationToMinutes(a.totalTime || '0m') - parseDurationToMinutes(b.totalTime || '0m');
         });
         // Only mark best if it doesn't have an error
         if (routes.length > 0 && !routes[0].hasError) routes[0].isBest = true;

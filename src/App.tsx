@@ -310,9 +310,7 @@ function App() {
   // Fetch commute data from backend API
   const fetchCommuteData = async (dir: 'toOffice' | 'toHome') => {
     try {
-      const now = new Date().toISOString();
-      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const response = await fetch(`/api/commute?direction=${dir}&now=${encodeURIComponent(now)}&timeZone=${encodeURIComponent(timeZone)}`);
+      const response = await fetch(`/api/commute?direction=${dir}`);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || `API error: ${response.status}`);
