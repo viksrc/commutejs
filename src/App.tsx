@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { LOCATIONS } from './config/locations';
+import { ROUTES_CONFIG } from './config/routes';
 import {
   fetchDrivingDirections,
   fetchTransitDirections,
@@ -21,6 +22,7 @@ type CommuteSegment = {
   traffic?: string;
   mode?: 'drive' | 'walk' | 'train' | 'path' | 'bus';
   departureTime?: string;
+  arrivalTime?: string;
 };
 
 type RouteOption = {
@@ -41,48 +43,54 @@ type CommuteData = {
 // SVG Icons - styled like SF Symbols
 const CarIcon = () => (
   <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-    <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
+    <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z" />
   </svg>
 );
 
 const TrainIcon = () => (
   <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-    <path d="M12 2c-4 0-8 .5-8 4v9.5C4 17.43 5.57 19 7.5 19L6 20.5v.5h2.23l2-2H14l2 2h2v-.5L16.5 19c1.93 0 3.5-1.57 3.5-3.5V6c0-3.5-3.58-4-8-4zM7.5 17c-.83 0-1.5-.67-1.5-1.5S6.67 14 7.5 14s1.5.67 1.5 1.5S8.33 17 7.5 17zm3.5-7H6V6h5v4zm2 0V6h5v4h-5zm3.5 7c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+    <path d="M12 2c-4 0-8 .5-8 4v9.5C4 17.43 5.57 19 7.5 19L6 20.5v.5h2.23l2-2H14l2 2h2v-.5L16.5 19c1.93 0 3.5-1.57 3.5-3.5V6c0-3.5-3.58-4-8-4zM7.5 17c-.83 0-1.5-.67-1.5-1.5S6.67 14 7.5 14s1.5.67 1.5 1.5S8.33 17 7.5 17zm3.5-7H6V6h5v4zm2 0V6h5v4h-5zm3.5 7c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" />
   </svg>
 );
 
 const WalkIcon = () => (
   <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-    <path d="M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM9.8 8.9L7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3C14.8 12 16.8 13 19 13v-2c-1.9 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1L6 8.3V13h2V9.6l1.8-.7"/>
+    <path d="M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM9.8 8.9L7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3C14.8 12 16.8 13 19 13v-2c-1.9 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1L6 8.3V13h2V9.6l1.8-.7" />
   </svg>
 );
 
 const TramIcon = () => (
   <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-    <path d="M19 16.94V8.5c0-2.79-2.61-3.4-6.01-3.49l.76-1.51H17V2H7v1.5h4.75l-.76 1.52C7.86 5.11 5 5.73 5 8.5v8.44c0 1.45 1.19 2.66 2.59 2.97L6 21.5v.5h2.23l2-2H14l2 2h2v-.5l-1.59-1.59c1.52-.28 2.59-1.54 2.59-2.97zM12 4.5c2.71 0 5 .24 5 2v.5H7V6.5c0-1.76 2.29-2 5-2zM7 9h10v4H7V9zm2.5 8c-.83 0-1.5-.67-1.5-1.5S8.67 14 9.5 14s1.5.67 1.5 1.5S10.33 17 9.5 17zm5 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+    <path d="M19 16.94V8.5c0-2.79-2.61-3.4-6.01-3.49l.76-1.51H17V2H7v1.5h4.75l-.76 1.52C7.86 5.11 5 5.73 5 8.5v8.44c0 1.45 1.19 2.66 2.59 2.97L6 21.5v.5h2.23l2-2H14l2 2h2v-.5l-1.59-1.59c1.52-.28 2.59-1.54 2.59-2.97zM12 4.5c2.71 0 5 .24 5 2v.5H7V6.5c0-1.76 2.29-2 5-2zM7 9h10v4H7V9zm2.5 8c-.83 0-1.5-.67-1.5-1.5S8.67 14 9.5 14s1.5.67 1.5 1.5S10.33 17 9.5 17zm5 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" />
+  </svg>
+);
+
+const BusIcon = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+    <path d="M4 16c0 .88.39 1.67 1 2.22V20c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h8v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1.78c.61-.55 1-1.34 1-2.22V6c0-3.5-3.58-4-8-4s-8 .5-8 4v10zm3.5 1c-.83 0-1.5-.67-1.5-1.5S6.67 14 7.5 14s1.5.67 1.5 1.5S8.33 17 7.5 17zm9 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm1.5-6H6V6h12v5z" />
   </svg>
 );
 
 const MapIcon = () => (
   <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-    <path d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5zM15 19l-6-2.11V5l6 2.11V19z"/>
+    <path d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5zM15 19l-6-2.11V5l6 2.11V19z" />
   </svg>
 );
 
 const ChevronIcon = ({ expanded }: { expanded: boolean }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14" style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
-    <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+    <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
   </svg>
 );
 
 const ClockIcon = () => (
   <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
-    <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/>
+    <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
   </svg>
 );
 
 // Helper component to get icon for transportation mode
-function ModeIcon({ mode }: { mode?: 'drive' | 'walk' | 'train' | 'path' }) {
+function ModeIcon({ mode }: { mode?: 'drive' | 'walk' | 'train' | 'path' | 'bus' }) {
   switch (mode) {
     case 'drive':
       return <CarIcon />;
@@ -92,6 +100,8 @@ function ModeIcon({ mode }: { mode?: 'drive' | 'walk' | 'train' | 'path' }) {
       return <TrainIcon />;
     case 'path':
       return <TramIcon />;
+    case 'bus':
+      return <BusIcon />;
     default:
       return <span className="mode-icon">•</span>;
   }
@@ -167,41 +177,52 @@ function openGoogleMaps(segment: CommuteSegment) {
 // Helper function to get Date object for departure time
 function getDepartureTimeDate(segments: CommuteSegment[]): Date {
   const now = new Date();
+
+  // If there are segments, check if the last one has an arrival time
+  if (segments.length > 0) {
+    const lastSegment = segments[segments.length - 1];
+    if (lastSegment.arrivalTime) {
+      const arrivalDate = parseTimeToDate(lastSegment.arrivalTime);
+      if (arrivalDate) return arrivalDate;
+    }
+  }
+
+  // Fallback: total duration added to now
   const totalMinutesStr = calculateTotalDuration(segments);
-  const minutesMatch = totalMinutesStr.match(/(\d+)m/);
-  const hoursMatch = totalMinutesStr.match(/(\d+)h/);
-
-  let totalMinutes = 0;
-  if (hoursMatch) {
-    totalMinutes += parseInt(hoursMatch[1], 10) * 60;
-  }
-  if (minutesMatch) {
-    totalMinutes += parseInt(minutesMatch[1], 10);
-  }
-
+  const totalMinutes = parseDurationToMinutes(totalMinutesStr);
   return new Date(now.getTime() + totalMinutes * 60000);
 }
 
-// Helper function to calculate ETA
-function calculateETA(totalTime: string): string {
-  // Parse the total time (e.g., "1h 35m" or "45m")
-  const hoursMatch = totalTime.match(/(\d+)h/);
-  const minutesMatch = totalTime.match(/(\d+)m/);
+// Helper function to calculate ETA based on segments with transit schedules
+function calculateETA(segments: CommuteSegment[]): string {
+  let currentTime = new Date();
 
-  let totalMinutes = 0;
-  if (hoursMatch) {
-    totalMinutes += parseInt(hoursMatch[1], 10) * 60;
-  }
-  if (minutesMatch) {
-    totalMinutes += parseInt(minutesMatch[1], 10);
-  }
+  for (const segment of segments) {
+    // If this segment has a scheduled departure time, we may need to wait
+    if (segment.departureTime) {
+      const departureDate = parseTimeToDate(segment.departureTime);
+      if (departureDate && departureDate > currentTime) {
+        // Wait for the scheduled departure
+        currentTime = departureDate;
+      }
+    }
 
-  // Calculate arrival time
-  const now = new Date();
-  const arrivalTime = new Date(now.getTime() + totalMinutes * 60000);
+    // If segment has arrival time, use it directly
+    if (segment.arrivalTime) {
+      const arrivalDate = parseTimeToDate(segment.arrivalTime);
+      if (arrivalDate) {
+        currentTime = arrivalDate;
+        continue;
+      }
+    }
+
+    // Otherwise, add the segment duration to current time
+    const durationMinutes = parseDurationToMinutes(segment.duration);
+    currentTime = new Date(currentTime.getTime() + durationMinutes * 60000);
+  }
 
   // Format as "HH:MM AM/PM"
-  return arrivalTime.toLocaleTimeString('en-US', {
+  return currentTime.toLocaleTimeString('en-US', {
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
@@ -241,6 +262,30 @@ function parseTimeToDate(timeStr: string): Date | null {
   const now = new Date();
   const result = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0);
   return result;
+}
+
+// Helper to format Date to AM/PM string
+function formatTimeToAMPM(date: Date): string {
+  return date.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  }).replace(/^0/, ''); // Remove leading zero if present
+}
+
+// Calculate arrival time from departure time + duration
+function calculateArrivalTime(departureTime: string, duration: string): string | null {
+  const depDate = parseTimeToDate(departureTime);
+  if (!depDate) return null;
+
+  const durationMinutes = parseDurationToMinutes(duration);
+  const arrivalDate = new Date(depDate.getTime() + durationMinutes * 60000);
+
+  return arrivalDate.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
 }
 
 // Calculate "Leave in X mins" based on first transit departure time
@@ -322,7 +367,7 @@ function App() {
   const [commuteData, setCommuteData] = useState<CommuteData | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const [expandedRoutes, setExpandedRoutes] = useState<Set<number>>(new Set([0])); // First route expanded by default
+  const [expandedRoutes, setExpandedRoutes] = useState<Set<number>>(new Set()); // No routes expanded by default
 
   // Listen for dark mode changes
   useEffect(() => {
@@ -343,602 +388,117 @@ function App() {
     try {
       const routes: RouteOption[] = [];
 
-      if (dir === 'toOffice') {
-        // ROUTE 1: Via Harrison PATH (Default)
-        const route1Segments: CommuteSegment[] = [];
+      // Process each route from config
+      const routeConfigs = ROUTES_CONFIG[dir];
 
-        const drive1 = await fetchDrivingDirections(
-          LOCATIONS.home.address,
-          LOCATIONS.harrisonParking.address
-        );
-        if (drive1) {
-          route1Segments.push({ ...drive1, from: 'Home', to: 'Harrison P', mode: 'drive' });
-        }
+      for (const routeConfig of routeConfigs) {
+        const segments: CommuteSegment[] = [];
+        let skipRoute = false;
 
-        // Walk from parking to PATH station
-        route1Segments.push({
-          from: 'Harrison P',
-          to: 'Harrison PATH',
-          duration: '5m',
-          distance: '-',
-          traffic: 'Walk',
-          mode: 'walk',
-        });
+        // Process each segment in the route
+        for (const segConfig of routeConfig.segments) {
+          if (skipRoute) break;
 
-        // Calculate when we arrive at Harrison station
-        const harrisonArrivalTime = getDepartureTimeDate(route1Segments);
-        const transit1 = await fetchTransitDirections(
-          LOCATIONS.harrisonPath.address,
-          LOCATIONS.wtcPath.address,
-          harrisonArrivalTime
-        );
-        if (transit1) {
-          route1Segments.push({
-            ...transit1,
-            from: 'Harrison',
-            to: 'WTC PATH',
-            mode: 'path',
-          });
-        }
+          let segment: CommuteSegment | null = null;
+          const startTimeDate = getDepartureTimeDate(segments);
 
-        // Walk from WTC PATH to Office
-        route1Segments.push({
-          from: 'WTC PATH',
-          to: 'Office',
-          duration: '5m',
-          distance: '-',
-          traffic: 'Walk',
-          mode: 'walk',
-        });
+          switch (segConfig.type) {
+            case 'drive': {
+              const driveResult = await fetchDrivingDirections(
+                LOCATIONS[segConfig.from].address,
+                LOCATIONS[segConfig.to].address
+              );
+              if (driveResult) {
+                segment = {
+                  ...driveResult,
+                  from: segConfig.fromLabel,
+                  to: segConfig.toLabel,
+                  mode: 'drive',
+                };
+              }
+              break;
+            }
 
-        const route1Total = calculateTotalDuration(route1Segments);
-        const route1Name = 'Via Harrison PATH';
-        routes.push({
-          name: route1Name,
-          totalTime: route1Total,
-          eta: calculateETA(route1Total),
-          segments: route1Segments,
-          leaveInMins: calculateLeaveInMins(route1Segments, route1Name) ?? undefined,
-        });
+            case 'walk': {
+              segment = {
+                from: segConfig.fromLabel,
+                to: segConfig.toLabel,
+                duration: segConfig.duration,
+                distance: '-',
+                traffic: 'Walk',
+                mode: 'walk',
+              };
+              break;
+            }
 
-        // ROUTE 2: Via Morris Plains → Hoboken → PATH
-        const route2Segments: CommuteSegment[] = [];
+            case 'transit': {
+              const transitResult = await fetchTransitDirections(
+                LOCATIONS[segConfig.from].address,
+                LOCATIONS[segConfig.to].address,
+                startTimeDate
+              );
+              if (transitResult) {
+                segment = {
+                  ...transitResult,
+                  from: segConfig.fromLabel,
+                  to: segConfig.toLabel,
+                  mode: segConfig.mode,
+                };
+              }
+              break;
+            }
 
-        const drive2 = await fetchDrivingDirections(
-          LOCATIONS.home.address,
-          LOCATIONS.morrisPlainsStation.address
-        );
-        if (drive2) {
-          route2Segments.push({ ...drive2, from: 'Home', to: 'Morris Plains', mode: 'drive' });
-        }
+            case 'bus': {
+              const nextBus = await findNextBus(startTimeDate, segConfig.direction);
 
-        // Add 3 mins parking time
-        route2Segments.push({
-          from: 'Morris Plains',
-          to: 'Parking',
-          duration: '3m',
-          distance: '-',
-          traffic: 'Walk',
-          mode: 'walk',
-        });
+              if (nextBus) {
+                const busDrivingTime = await fetchDrivingDirections(
+                  LOCATIONS[segConfig.from].address,
+                  LOCATIONS[segConfig.to].address
+                );
 
-        // Train from Morris Plains to Hoboken
-        const morrisPlainsArrivalTime = getDepartureTimeDate(route2Segments);
-        const train = await fetchTransitDirections(
-          LOCATIONS.morrisPlainsStation.address,
-          LOCATIONS.hobokenStation.address,
-          morrisPlainsArrivalTime
-        );
-        if (train) {
-          route2Segments.push({
-            ...train,
-            from: 'Morris Plains',
-            to: 'Hoboken',
-            mode: 'train',
-          });
-        }
+                const busDuration = busDrivingTime?.duration || '45m';
+                const busArrival = calculateArrivalTime(nextBus.departureTime, busDuration);
 
-        // Add 5 mins to PATH
-        route2Segments.push({
-          from: 'Hoboken',
-          to: 'PATH',
-          duration: '5m',
-          distance: '-',
-          traffic: 'Walk',
-          mode: 'walk',
-        });
-
-        // PATH from Hoboken to WTC
-        const hobokenPathArrivalTime = getDepartureTimeDate(route2Segments);
-        const path = await fetchTransitDirections(
-          LOCATIONS.hobokenStation.address,
-          LOCATIONS.office.address,
-          hobokenPathArrivalTime
-        );
-        if (path) {
-          route2Segments.push({
-            ...path,
-            from: 'Hoboken PATH',
-            to: 'WTC',
-            mode: 'path',
-          });
-        }
-
-        // Walk from WTC to Office
-        route2Segments.push({
-          from: 'WTC',
-          to: 'Office',
-          duration: '5m',
-          distance: '-',
-          traffic: 'Walk',
-          mode: 'walk',
-        });
-
-        const route2Total = calculateTotalDuration(route2Segments);
-        const route2Name = 'Via Hoboken Station';
-        routes.push({
-          name: route2Name,
-          totalTime: route2Total,
-          eta: calculateETA(route2Total),
-          segments: route2Segments,
-          leaveInMins: calculateLeaveInMins(route2Segments, route2Name) ?? undefined,
-        });
-
-        // ROUTE 3: Via Morris Plains → NY Penn → Subway to WTC
-        const route3Segments: CommuteSegment[] = [];
-
-        const drive3 = await fetchDrivingDirections(
-          LOCATIONS.home.address,
-          LOCATIONS.morrisPlainsStation.address
-        );
-        if (drive3) {
-          route3Segments.push({ ...drive3, from: 'Home', to: 'Morris Plains', mode: 'drive' });
-        }
-
-        // Add 3 mins parking time
-        route3Segments.push({
-          from: 'Morris Plains',
-          to: 'Parking',
-          duration: '3m',
-          distance: '-',
-          traffic: 'Walk',
-          mode: 'walk',
-        });
-
-        // Train from Morris Plains to NY Penn Station
-        const trainToPenn = getDepartureTimeDate(route3Segments);
-        const pennTrain = await fetchTransitDirections(
-          LOCATIONS.morrisPlainsStation.address,
-          LOCATIONS.nyPennStation.address,
-          trainToPenn
-        );
-        if (pennTrain) {
-          route3Segments.push({
-            ...pennTrain,
-            from: 'Morris Plains',
-            to: 'NY Penn',
-            mode: 'train',
-          });
-        }
-
-        // Add 5 mins to subway
-        route3Segments.push({
-          from: 'Penn Station',
-          to: 'Subway',
-          duration: '5m',
-          distance: '-',
-          traffic: 'Walk',
-          mode: 'walk',
-        });
-
-        // Subway from Penn Station to WTC
-        const pennArrivalTime = getDepartureTimeDate(route3Segments);
-        const subway = await fetchTransitDirections(
-          LOCATIONS.nyPennStation.address,
-          LOCATIONS.office.address,
-          pennArrivalTime
-        );
-        if (subway) {
-          route3Segments.push({
-            ...subway,
-            from: 'Penn Station',
-            to: 'WTC',
-            mode: 'train', // NYC Subway, not PATH
-          });
-        }
-
-        // Walk from WTC to Office
-        route3Segments.push({
-          from: 'WTC',
-          to: 'Office',
-          duration: '5m',
-          distance: '-',
-          traffic: 'Walk',
-          mode: 'walk',
-        });
-
-        const route3Total = calculateTotalDuration(route3Segments);
-        const route3Name = 'Via NY Penn Station';
-        routes.push({
-          name: route3Name,
-          totalTime: route3Total,
-          eta: calculateETA(route3Total),
-          segments: route3Segments,
-          leaveInMins: calculateLeaveInMins(route3Segments, route3Name) ?? undefined,
-        });
-
-        // ROUTE 4: Via Waterview Park & Ride → Port Authority Bus → Subway to WTC
-        const route4Segments: CommuteSegment[] = [];
-
-        const drive4 = await fetchDrivingDirections(
-          LOCATIONS.home.address,
-          LOCATIONS.waterviewParkRide.address
-        );
-        if (drive4) {
-          route4Segments.push({ ...drive4, from: 'Home', to: 'Waterview P&R', mode: 'drive' });
-        }
-
-        // Add 3 mins parking/walking to bus stop
-        route4Segments.push({
-          from: 'Waterview P&R',
-          to: 'Bus Stop',
-          duration: '3m',
-          distance: '-',
-          traffic: 'Walk',
-          mode: 'walk',
-        });
-
-        // Find next Lakeland Bus
-        const waterviewArrivalTime = getDepartureTimeDate(route4Segments);
-        const nextBus = await findNextBus(waterviewArrivalTime, 'eastbound');
-
-        if (nextBus) {
-          // Get driving duration for estimated bus travel time
-          const busDrivingTime = await fetchDrivingDirections(
-            LOCATIONS.waterviewParkRide.address,
-            LOCATIONS.portAuthority.address
-          );
-
-          route4Segments.push({
-            from: 'Waterview P&R',
-            to: 'Port Authority',
-            duration: busDrivingTime?.duration || '45m',
-            distance: busDrivingTime?.distance || '30 mi',
-            traffic: `Departs ${nextBus.departureTime}`,
-            mode: 'bus',
-            departureTime: nextBus.departureTime,
-          });
-        }
-
-        // Only include Route 4 if bus is available
-        if (nextBus) {
-          // Subway from Port Authority to Office
-          const pabtArrivalTime = getDepartureTimeDate(route4Segments);
-          const pabtSubway = await fetchTransitDirections(
-            LOCATIONS.portAuthority.address,
-            LOCATIONS.office.address,
-            pabtArrivalTime
-          );
-          if (pabtSubway) {
-            route4Segments.push({
-              ...pabtSubway,
-              from: 'Port Authority',
-              to: 'Office',
-              mode: 'train', // NYC Subway, not PATH
-            });
+                segment = {
+                  from: segConfig.fromLabel,
+                  to: segConfig.toLabel,
+                  duration: busDuration,
+                  distance: busDrivingTime?.distance || '30 mi',
+                  traffic: `Departs ${nextBus.departureTime}`,
+                  mode: 'bus',
+                  departureTime: nextBus.departureTime,
+                  arrivalTime: busArrival || undefined,
+                };
+              } else {
+                console.warn(`No Lakeland bus available for ${routeConfig.name}`);
+                skipRoute = true;
+              }
+              break;
+            }
           }
 
-          const route4Total = calculateTotalDuration(route4Segments);
-          const route4Name = 'Via Port Authority Bus';
-          routes.push({
-            name: route4Name,
-            totalTime: route4Total,
-            eta: calculateETA(route4Total),
-            segments: route4Segments,
-            leaveInMins: calculateLeaveInMins(route4Segments, route4Name) ?? undefined,
-          });
-        } else {
-          console.warn('No Lakeland bus available for Route 4 (toOffice)');
-        }
-      } else {
-        // TO HOME - ROUTE 1: Via Harrison PATH
-        const route1Segments: CommuteSegment[] = [];
-
-        // Walk from Office to WTC PATH
-        route1Segments.push({
-          from: 'Office',
-          to: 'WTC PATH',
-          duration: '5m',
-          distance: '-',
-          traffic: 'Walk',
-          mode: 'walk',
-        });
-
-        // Calculate when we arrive at WTC PATH
-        const wtcArrivalTime = getDepartureTimeDate(route1Segments);
-        const transit1 = await fetchTransitDirections(
-          LOCATIONS.wtcPath.address,
-          LOCATIONS.harrisonPath.address,
-          wtcArrivalTime
-        );
-        if (transit1) {
-          route1Segments.push({
-            ...transit1,
-            from: 'WTC PATH',
-            to: 'Harrison',
-            mode: 'path',
-          });
-        }
-
-        // Walk from Harrison PATH to parking
-        route1Segments.push({
-          from: 'Harrison PATH',
-          to: 'Harrison P',
-          duration: '5m',
-          distance: '-',
-          traffic: 'Walk',
-          mode: 'walk',
-        });
-
-        const drive1 = await fetchDrivingDirections(
-          LOCATIONS.harrisonParking.address,
-          LOCATIONS.home.address
-        );
-        if (drive1) {
-          route1Segments.push({ ...drive1, from: 'Harrison P', to: 'Home', mode: 'drive' });
-        }
-
-        const route1Total = calculateTotalDuration(route1Segments);
-        const route1NameHome = 'Via Harrison PATH';
-        routes.push({
-          name: route1NameHome,
-          totalTime: route1Total,
-          eta: calculateETA(route1Total),
-          segments: route1Segments,
-          leaveInMins: calculateLeaveInMins(route1Segments, route1NameHome) ?? undefined,
-        });
-
-        // TO HOME - ROUTE 2: Via PATH → Hoboken → Morris Plains Train
-        const route2Segments: CommuteSegment[] = [];
-
-        // Walk from Office to WTC
-        route2Segments.push({
-          from: 'Office',
-          to: 'WTC',
-          duration: '5m',
-          distance: '-',
-          traffic: 'Walk',
-          mode: 'walk',
-        });
-
-        // PATH from WTC to Hoboken
-        const wtcArrivalTime2 = getDepartureTimeDate(route2Segments);
-        const path = await fetchTransitDirections(
-          LOCATIONS.office.address,
-          LOCATIONS.hobokenStation.address,
-          wtcArrivalTime2
-        );
-        if (path) {
-          route2Segments.push({
-            ...path,
-            from: 'WTC',
-            to: 'Hoboken PATH',
-            mode: 'path',
-          });
-        }
-
-        // Walk to train
-        route2Segments.push({
-          from: 'PATH',
-          to: 'Hoboken Station',
-          duration: '5m',
-          distance: '-',
-          traffic: 'Walk',
-          mode: 'walk',
-        });
-
-        // Train from Hoboken to Morris Plains
-        const hobokenTrainArrivalTime = getDepartureTimeDate(route2Segments);
-        const train = await fetchTransitDirections(
-          LOCATIONS.hobokenStation.address,
-          LOCATIONS.morrisPlainsStation.address,
-          hobokenTrainArrivalTime
-        );
-        if (train) {
-          route2Segments.push({
-            ...train,
-            from: 'Hoboken',
-            to: 'Morris Plains',
-            mode: 'train',
-          });
-        }
-
-        // Walk from parking
-        route2Segments.push({
-          from: 'Parking',
-          to: 'Morris Plains',
-          duration: '3m',
-          distance: '-',
-          traffic: 'Walk',
-          mode: 'walk',
-        });
-
-        // Drive from Morris Plains to Home
-        const drive2 = await fetchDrivingDirections(
-          LOCATIONS.morrisPlainsStation.address,
-          LOCATIONS.home.address
-        );
-        if (drive2) {
-          route2Segments.push({ ...drive2, from: 'Morris Plains', to: 'Home', mode: 'drive' });
-        }
-
-        const route2Total = calculateTotalDuration(route2Segments);
-        const route2NameHome = 'Via Hoboken Station';
-        routes.push({
-          name: route2NameHome,
-          totalTime: route2Total,
-          eta: calculateETA(route2Total),
-          segments: route2Segments,
-          leaveInMins: calculateLeaveInMins(route2Segments, route2NameHome) ?? undefined,
-        });
-
-        // TO HOME - ROUTE 3: Via Subway to Penn Station → Morris Plains Train
-        const route3Segments: CommuteSegment[] = [];
-
-        // Walk from Office to WTC
-        route3Segments.push({
-          from: 'Office',
-          to: 'WTC',
-          duration: '5m',
-          distance: '-',
-          traffic: 'Walk',
-          mode: 'walk',
-        });
-
-        // Subway from WTC to Penn Station
-        const wtcArrivalTime3 = getDepartureTimeDate(route3Segments);
-        const subway = await fetchTransitDirections(
-          LOCATIONS.office.address,
-          LOCATIONS.nyPennStation.address,
-          wtcArrivalTime3
-        );
-        if (subway) {
-          route3Segments.push({
-            ...subway,
-            from: 'WTC',
-            to: 'Penn Station',
-            mode: 'train', // NYC Subway, not PATH
-          });
-        }
-
-        // Walk to train
-        route3Segments.push({
-          from: 'Subway',
-          to: 'Penn Station',
-          duration: '5m',
-          distance: '-',
-          traffic: 'Walk',
-          mode: 'walk',
-        });
-
-        // Train from Penn Station to Morris Plains
-        const pennArrivalTime3 = getDepartureTimeDate(route3Segments);
-        const pennTrain = await fetchTransitDirections(
-          LOCATIONS.nyPennStation.address,
-          LOCATIONS.morrisPlainsStation.address,
-          pennArrivalTime3
-        );
-        if (pennTrain) {
-          route3Segments.push({
-            ...pennTrain,
-            from: 'NY Penn',
-            to: 'Morris Plains',
-            mode: 'train',
-          });
-        }
-
-        // Walk from parking
-        route3Segments.push({
-          from: 'Parking',
-          to: 'Morris Plains',
-          duration: '3m',
-          distance: '-',
-          traffic: 'Walk',
-          mode: 'walk',
-        });
-
-        // Drive from Morris Plains to Home
-        const drive3 = await fetchDrivingDirections(
-          LOCATIONS.morrisPlainsStation.address,
-          LOCATIONS.home.address
-        );
-        if (drive3) {
-          route3Segments.push({ ...drive3, from: 'Morris Plains', to: 'Home', mode: 'drive' });
-        }
-
-        const route3Total = calculateTotalDuration(route3Segments);
-        const route3NameHome = 'Via NY Penn Station';
-        routes.push({
-          name: route3NameHome,
-          totalTime: route3Total,
-          eta: calculateETA(route3Total),
-          segments: route3Segments,
-          leaveInMins: calculateLeaveInMins(route3Segments, route3NameHome) ?? undefined,
-        });
-
-        // TO HOME - ROUTE 4: Via Subway to Port Authority → Bus to Waterview
-        const route4Segments: CommuteSegment[] = [];
-
-        // Subway from Office to Port Authority
-        const wtcArrivalTime4 = getDepartureTimeDate(route4Segments);
-        const pabtSubway = await fetchTransitDirections(
-          LOCATIONS.office.address,
-          LOCATIONS.portAuthority.address,
-          wtcArrivalTime4
-        );
-        if (pabtSubway) {
-          route4Segments.push({
-            ...pabtSubway,
-            from: 'Office',
-            to: 'Port Authority',
-            mode: 'train', // NYC Subway, not PATH
-          });
-        }
-
-        // Find next Lakeland Bus (westbound)
-        const pabtArrivalTime4 = getDepartureTimeDate(route4Segments);
-        const nextBusHome = await findNextBus(pabtArrivalTime4, 'westbound');
-
-        if (nextBusHome) {
-          // Get driving duration for estimated bus travel time
-          const busDrivingTime = await fetchDrivingDirections(
-            LOCATIONS.portAuthority.address,
-            LOCATIONS.waterviewParkRide.address
-          );
-
-          route4Segments.push({
-            from: 'Port Authority',
-            to: 'Waterview P&R',
-            duration: busDrivingTime?.duration || '45m',
-            distance: busDrivingTime?.distance || '30 mi',
-            traffic: `Departs ${nextBusHome.departureTime}`,
-            mode: 'bus',
-            departureTime: nextBusHome.departureTime,
-          });
-        }
-
-        // Only include Route 4 if bus is available
-        if (nextBusHome) {
-          // Walk from bus stop to parking
-          route4Segments.push({
-            from: 'Bus Stop',
-            to: 'Waterview P&R',
-            duration: '3m',
-            distance: '-',
-            traffic: 'Walk',
-            mode: 'walk',
-          });
-
-          // Drive from Waterview to Home
-          const drive4 = await fetchDrivingDirections(
-            LOCATIONS.waterviewParkRide.address,
-            LOCATIONS.home.address
-          );
-          if (drive4) {
-            route4Segments.push({ ...drive4, from: 'Waterview P&R', to: 'Home', mode: 'drive' });
+          if (segment) {
+            // Fill in missing times for drive/walk/others
+            if (!segment.departureTime) {
+              segment.departureTime = formatTimeToAMPM(startTimeDate);
+            }
+            if (!segment.arrivalTime) {
+              segment.arrivalTime = calculateArrivalTime(segment.departureTime, segment.duration) || undefined;
+            }
+            segments.push(segment);
           }
+        }
 
-          const route4Total = calculateTotalDuration(route4Segments);
-          const route4NameHome = 'Via Port Authority Bus';
+        // Add route if not skipped
+        if (!skipRoute && segments.length > 0) {
           routes.push({
-            name: route4NameHome,
-            totalTime: route4Total,
-            eta: calculateETA(route4Total),
-            segments: route4Segments,
-            leaveInMins: calculateLeaveInMins(route4Segments, route4NameHome) ?? undefined,
+            name: routeConfig.name,
+            totalTime: calculateTotalDuration(segments),
+            eta: calculateETA(segments),
+            segments,
+            leaveInMins: calculateLeaveInMins(segments, routeConfig.name) ?? undefined,
           });
-        } else {
-          console.warn('No Lakeland bus available for Route 4 (toHome)');
         }
       }
 
@@ -973,7 +533,7 @@ function App() {
   // Load data on mount and when direction changes
   useEffect(() => {
     fetchCommuteData(direction);
-    setExpandedRoutes(new Set([0])); // Reset to first route expanded
+    setExpandedRoutes(new Set()); // No routes expanded by default
   }, [direction]);
 
 
@@ -1086,20 +646,13 @@ function App() {
                               <span>{getModeLabel(segment.mode)}</span>
                               <span className="separator">•</span>
                               <span>{segment.duration}</span>
-                              {/* Show departure time for transit segments (PATH, train, bus) */}
-                              {(segment.mode === 'path' || segment.mode === 'train' || segment.mode === 'bus') && (
+                              {/* Show time range for all segments */}
+                              {segment.departureTime && (
                                 <>
-                                  {segment.traffic?.includes('Departs') ? (
-                                    <>
-                                      <span className="separator">•</span>
-                                      <span className="segment-departs">{segment.traffic}</span>
-                                    </>
-                                  ) : segment.departureTime ? (
-                                    <>
-                                      <span className="separator">•</span>
-                                      <span className="segment-departs">Departs {segment.departureTime}</span>
-                                    </>
-                                  ) : null}
+                                  <span className="separator">•</span>
+                                  <span className="segment-times">
+                                    {segment.departureTime}{segment.arrivalTime ? ` → ${segment.arrivalTime}` : ''}
+                                  </span>
                                 </>
                               )}
                               {segment.traffic && segment.mode === 'drive' && (

@@ -25,6 +25,7 @@ export type RouteSegment = {
   distance: string;
   traffic?: string;
   departureTime?: string;
+  arrivalTime?: string;
 };
 
 export type RouteData = {
@@ -171,7 +172,7 @@ export async function fetchTransitDirections(
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
         'X-Goog-FieldMask':
-          'routes.duration,routes.distanceMeters,routes.legs.staticDuration,routes.legs.steps.transitDetails.transitLine,routes.legs.steps.transitDetails.stopDetails.departureTime',
+          'routes.duration,routes.distanceMeters,routes.legs.staticDuration,routes.legs.steps.transitDetails.transitLine,routes.legs.steps.transitDetails.stopDetails.departureTime,routes.legs.steps.transitDetails.stopDetails.arrivalTime',
       },
       body: JSON.stringify(requestBody),
     });
@@ -208,16 +209,29 @@ export async function fetchTransitDirections(
       const durationMinutes = Math.round(durationSeconds / 60);
       const durationText = formatDuration(durationMinutes);
 
-      // Extract departure time from transit details
+      // Extract departure and arrival times from transit details
       let departureTime: string | undefined;
+      let arrivalTime: string | undefined;
       const transitSteps = leg?.steps?.filter((step: any) => step.transitDetails);
       if (transitSteps && transitSteps.length > 0) {
+        // Get departure time from first transit step
         const firstTransitStep = transitSteps[0];
         const departureTimeData = firstTransitStep.transitDetails?.stopDetails?.departureTime;
         if (departureTimeData) {
-          // Parse ISO 8601 datetime and format as local time
           const depDate = new Date(departureTimeData);
           departureTime = depDate.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true,
+          });
+        }
+
+        // Get arrival time from last transit step
+        const lastTransitStep = transitSteps[transitSteps.length - 1];
+        const arrivalTimeData = lastTransitStep.transitDetails?.stopDetails?.arrivalTime;
+        if (arrivalTimeData) {
+          const arrDate = new Date(arrivalTimeData);
+          arrivalTime = arrDate.toLocaleTimeString('en-US', {
             hour: '2-digit',
             minute: '2-digit',
             hour12: true,
@@ -247,6 +261,7 @@ export async function fetchTransitDirections(
         distance: hasPath ? 'PATH + walk' : `${(route.distanceMeters * 0.000621371).toFixed(1)} mi`,
         traffic: transitStatus,
         departureTime,
+        arrivalTime,
       };
     }
 

@@ -1,226 +1,35 @@
 import { CachedScheduleData, BusDirection, NextBus } from '../types/lakelandBus';
-import * as cacheService from './cacheService';
 import { FALLBACK_SCHEDULE } from '../config/fallbackSchedule';
 
-const CACHE_KEY = 'lakeland-bus-route46-schedule';
-
-const SCHEDULE_IDS = {
-  weekdayEastbound: '25',
-  weekdayWestbound: '32',
-  weekendEastbound: '26',
-  weekendWestbound: '28',
-};
-
-// Use our Vercel proxy to avoid CORS issues
-const LAKELAND_BASE_URL = '/api/lakeland-bus';
+// API Endpoint
+const LAKELAND_API_URL = '/api/lakeland-bus';
 
 /**
- * Parse schedule HTML to extract times for a specific stop
- */
-function parseScheduleHTML(html: string, stopName: string): string[] {
-  console.log(`  Looking for stop: "${stopName}"`);
-  console.log(`  HTML length: ${html.length} chars`);
-
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
-
-  console.log(`  Document parsed, title: "${doc.title}"`);
-  console.log(`  Document body length: ${doc.body?.innerHTML.length || 0} chars`);
-
-  // Find the row containing the stop name
-  const rows = Array.from(doc.querySelectorAll('tr.stop-schedule'));
-  console.log(`  Found ${rows.length} rows with class "stop-schedule"`);
-
-  // Log all available stop names for debugging
-  if (rows.length > 0) {
-    console.log('  Available stops in schedule:');
-    rows.forEach((row, idx) => {
-      const nameDiv = row.querySelector('.s-name');
-      const nameTd = row.querySelector('td.wg-col-name');
-      console.log(`    Row ${idx}:`, {
-        hasNameDiv: !!nameDiv,
-        nameDivText: nameDiv?.textContent?.trim() || 'EMPTY',
-        hasTd: !!nameTd,
-        tdInnerHTML: nameTd?.innerHTML?.substring(0, 100) || 'NO TD'
-      });
-    });
-  } else {
-    console.warn('  ❌ NO ROWS found with class "stop-schedule"!');
-    console.warn('  First 1000 chars of HTML:', html.substring(0, 1000));
-
-    // Try to find any tr elements
-    const allTrs = doc.querySelectorAll('tr');
-    console.warn(`  Total <tr> elements found: ${allTrs.length}`);
-    if (allTrs.length > 0) {
-      console.warn(`  First <tr> classes: ${allTrs[0].className}`);
-    }
-  }
-
-  const stopRow = rows.find(row => {
-    const nameDiv = row.querySelector('.s-name');
-    return nameDiv && nameDiv.textContent?.includes(stopName);
-  });
-
-  if (!stopRow) {
-    console.warn(`Stop "${stopName}" not found in schedule`);
-    return [];
-  }
-
-  // Extract all times from the row
-  const times: string[] = [];
-  const timeCells = stopRow.querySelectorAll('td .s-time span');
-
-  timeCells.forEach(span => {
-    const time = span.textContent?.trim();
-    if (time && time !== '-') {
-      times.push(time);
-    }
-  });
-
-  return times;
-}
-
-/**
- * Add AM/PM to times based on schedule context
- */
-function addAmPm(times: string[], direction: BusDirection, isWeekend: boolean): string[] {
-  return times.map(time => {
-    const [hourStr] = time.split(':');
-    const hour = parseInt(hourStr, 10);
-
-    let isAM = false;
-
-    if (direction === 'eastbound') {
-      // Morning commute - most times are AM, afternoon service is PM
-      if (isWeekend) {
-        isAM = hour >= 7 && hour < 12;
-      } else {
-        // Weekday: 4:50-12:20 AM, 1:20-9:20 PM
-        isAM = hour >= 4 && hour <= 12;
-      }
-    } else {
-      // Westbound - evening commute
-      if (isWeekend) {
-        isAM = hour >= 7 && hour < 12;
-      } else {
-        // Weekday: 7:30-11:30 AM, 1:00-10:30 PM
-        isAM = hour >= 7 && hour < 12;
-      }
-    }
-
-    return `${time} ${isAM ? 'AM' : 'PM'}`;
-  });
-}
-
-/**
- * Fetch schedule from Lakeland Bus website
- */
-export async function fetchSchedule(): Promise<CachedScheduleData> {
-  try {
-    console.log('🚌 Fetching Lakeland Bus schedules via proxy...');
-    const schedules = await Promise.all([
-      fetch(`${LAKELAND_BASE_URL}?id=${SCHEDULE_IDS.weekdayEastbound}`).then(r => r.text()),
-      fetch(`${LAKELAND_BASE_URL}?id=${SCHEDULE_IDS.weekdayWestbound}`).then(r => r.text()),
-      fetch(`${LAKELAND_BASE_URL}?id=${SCHEDULE_IDS.weekendEastbound}`).then(r => r.text()),
-      fetch(`${LAKELAND_BASE_URL}?id=${SCHEDULE_IDS.weekendWestbound}`).then(r => r.text()),
-    ]);
-    console.log('✅ Lakeland Bus schedules fetched successfully');
-
-    const [weekdayEastHTML, weekdayWestHTML, weekendEastHTML, weekendWestHTML] = schedules;
-
-    console.log('📄 HTML responses received:');
-    console.log('  Weekday East:', weekdayEastHTML.length, 'chars');
-    console.log('  Weekday West:', weekdayWestHTML.length, 'chars');
-    console.log('  Weekend East:', weekendEastHTML.length, 'chars');
-    console.log('  Weekend West:', weekendWestHTML.length, 'chars');
-
-    // Parse each schedule
-    console.log('🔍 Parsing weekday eastbound...');
-    const weekdayEastTimes = parseScheduleHTML(weekdayEastHTML, 'Parsippany (Waterview P&R)');
-    console.log(`  ✓ Parsed ${weekdayEastTimes.length} raw times: ${weekdayEastTimes.slice(0, 3).join(', ')}...`);
-
-    console.log('🔍 Parsing weekday westbound...');
-    const weekdayWestTimes = parseScheduleHTML(weekdayWestHTML, 'NY PABT');
-    console.log(`  ✓ Parsed ${weekdayWestTimes.length} raw times: ${weekdayWestTimes.slice(0, 3).join(', ')}...`);
-
-    console.log('🔍 Parsing weekend eastbound...');
-    const weekendEastTimes = parseScheduleHTML(weekendEastHTML, 'Parsippany (Waterview P&R)');
-    console.log(`  ✓ Parsed ${weekendEastTimes.length} raw times: ${weekendEastTimes.join(', ')}`);
-
-    console.log('🔍 Parsing weekend westbound...');
-    // Weekend westbound uses "LEAVES FROM GATE #" instead of "NY PABT"
-    const weekendWestTimes = parseScheduleHTML(weekendWestHTML, 'LEAVES FROM GATE');
-    console.log(`  ✓ Parsed ${weekendWestTimes.length} raw times: ${weekendWestTimes.join(', ')}`);
-
-    // Add AM/PM
-    console.log('⏰ Adding AM/PM to times...');
-    const weekdayEastbound = addAmPm(weekdayEastTimes, 'eastbound', false);
-    console.log(`  Weekday East: ${weekdayEastbound.length} times with AM/PM`);
-    const weekdayWestbound = addAmPm(weekdayWestTimes, 'westbound', false);
-    console.log(`  Weekday West: ${weekdayWestbound.length} times with AM/PM`);
-    const weekendEastbound = addAmPm(weekendEastTimes, 'eastbound', true);
-    console.log(`  Weekend East: ${weekendEastbound.length} times with AM/PM: ${weekendEastbound.join(', ')}`);
-    const weekendWestbound = addAmPm(weekendWestTimes, 'westbound', true);
-    console.log(`  Weekend West: ${weekendWestbound.length} times with AM/PM: ${weekendWestbound.join(', ')}`);
-
-    const scheduleData: CachedScheduleData = {
-      timestamp: Date.now(),
-      fetchedAt: new Date().toISOString(),
-      schedules: {
-        weekday: {
-          eastbound: weekdayEastbound,
-          westbound: weekdayWestbound,
-        },
-        weekend: {
-          eastbound: weekendEastbound,
-          westbound: weekendWestbound,
-        },
-      },
-    };
-
-    return scheduleData;
-  } catch (error) {
-    console.error('Failed to fetch Lakeland Bus schedule:', error);
-    throw error;
-  }
-}
-
-/**
- * Get schedule from cache or fetch if needed
+ * Get schedule from backend API
  */
 export async function getSchedule(): Promise<CachedScheduleData> {
-  const cached = cacheService.get<CachedScheduleData>(CACHE_KEY);
-
-  // Fresh cache (< 24h)
-  if (cached && !cacheService.isStale(CACHE_KEY, cacheService.CACHE_TTL.PREFERRED)) {
-    return cached.data;
-  }
-
-  // Stale cache (1-7 days) - try to fetch, fallback to cache
-  if (cached && !cacheService.isStale(CACHE_KEY, cacheService.CACHE_TTL.MAX_STALE)) {
-    try {
-      const freshData = await fetchSchedule();
-      cacheService.set(CACHE_KEY, freshData);
-      return freshData;
-    } catch (error) {
-      console.warn('Failed to refresh stale cache, using cached data:', error);
-      return cached.data;
-    }
-  }
-
-  // Old cache (> 7 days) or no cache - force fetch
   try {
-    const freshData = await fetchSchedule();
-    cacheService.set(CACHE_KEY, freshData);
-    return freshData;
-  } catch (error) {
-    if (cached) {
-      console.warn('Failed to fetch schedule, using very old cache:', error);
-      return cached.data;
+    console.log('🚌 Fetching schedule from backend API...');
+    const response = await fetch(LAKELAND_API_URL);
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
     }
-    console.error('Failed to fetch schedule and no cache available, using fallback:', error);
+
+    const data = await response.json();
+    console.log('✅ Schedule received from backend');
+    return data;
+  } catch (error) {
+    console.error('❌ Failed to fetch schedule from backend:', error);
     return FALLBACK_SCHEDULE;
   }
+}
+
+/**
+ * Fetch schedule directly (alias for getSchedule now that logic moved to backend)
+ */
+export async function fetchSchedule(): Promise<CachedScheduleData> {
+  return getSchedule();
 }
 
 /**
@@ -262,7 +71,6 @@ export async function findNextBus(arrivalTime: Date, direction: BusDirection): P
     const arrivalTimeStr = `${arrivalTime.getHours()}:${arrivalTime.getMinutes().toString().padStart(2, '0')}`;
 
     console.log(`🚌 Looking for ${direction} bus after ${arrivalTimeStr} on ${dayType}`);
-    console.log(`  Available times: ${times.slice(0, 5).join(', ')}${times.length > 5 ? '...' : ''}`);
 
     // Find next bus
     for (const busTime of times) {
@@ -288,17 +96,14 @@ export async function findNextBus(arrivalTime: Date, direction: BusDirection): P
 /**
  * Get schedule metadata for UI display
  */
-export function getScheduleMetadata(): { lastUpdated: string | null; isStale: boolean } {
-  const cached = cacheService.get<CachedScheduleData>(CACHE_KEY);
-
-  if (!cached) {
+export async function getScheduleMetadata(): Promise<{ lastUpdated: string | null; isStale: boolean }> {
+  try {
+    const schedule = await getSchedule();
+    return {
+      lastUpdated: schedule.fetchedAt,
+      isStale: false, // Backend handles staleness/caching
+    };
+  } catch {
     return { lastUpdated: null, isStale: true };
   }
-
-  const isStale = cacheService.isStale(CACHE_KEY, cacheService.CACHE_TTL.PREFERRED);
-
-  return {
-    lastUpdated: cached.data.fetchedAt,
-    isStale,
-  };
 }
