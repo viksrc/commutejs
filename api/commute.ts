@@ -572,12 +572,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }
         }
 
-        // Sort routes: valid routes by duration, error routes at end
+        // Sort routes: valid routes by ETA (earliest arrival first), error routes at end
         routes.sort((a, b) => {
             if (a.hasError && !b.hasError) return 1;
             if (!a.hasError && b.hasError) return -1;
             if (a.hasError && b.hasError) return 0;
-            return parseDurationToMinutes(a.totalTime || '0m') - parseDurationToMinutes(b.totalTime || '0m');
+            return parseTimeMinutes(a.eta || '11:59 PM') - parseTimeMinutes(b.eta || '11:59 PM');
         });
         // Only mark best if it doesn't have an error
         if (routes.length > 0 && !routes[0].hasError) routes[0].isBest = true;
