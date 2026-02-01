@@ -12,10 +12,7 @@ const SCHEDULE_IDS = {
 };
 
 // Use our Vercel proxy to avoid CORS issues
-// In local dev, use deployed Vercel URL since serverless functions don't work in Vite
-const LAKELAND_BASE_URL = import.meta.env.DEV
-  ? 'https://commutejs.vercel.app/api/lakeland-bus'
-  : '/api/lakeland-bus';
+const LAKELAND_BASE_URL = '/api/lakeland-bus';
 
 /**
  * Parse schedule HTML to extract times for a specific stop
