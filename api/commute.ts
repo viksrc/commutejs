@@ -152,7 +152,10 @@ const GOOGLE_MAPS_API_KEY = process.env.VITE_GOOGLE_MAPS_API_KEY || process.env.
 const ROUTES_API_URL = 'https://routes.googleapis.com/directions/v2:computeRoutes';
 
 async function fetchDrivingDirections(origin: string, destination: string): Promise<Partial<CommuteSegment> | null> {
-    if (!GOOGLE_MAPS_API_KEY) throw new Error('Missing Google Maps API Key');
+    if (!GOOGLE_MAPS_API_KEY) {
+        console.error('Google Maps API Key is missing');
+        throw new Error('Missing Google Maps API Key');
+    }
 
     const requestBody = {
         origin: { address: origin },
@@ -176,7 +179,11 @@ async function fetchDrivingDirections(origin: string, destination: string): Prom
             body: JSON.stringify(requestBody),
         });
 
-        if (!response.ok) return null;
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`Google Driving API error (${response.status}):`, errorText);
+            return null;
+        }
 
         const data = await response.json();
         if (!data.routes || data.routes.length === 0) return null;
@@ -232,7 +239,11 @@ async function fetchTransitDirections(origin: string, destination: string, depar
             body: JSON.stringify(requestBody),
         });
 
-        if (!response.ok) return null;
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`Google Transit API error (${response.status}):`, errorText);
+            return null;
+        }
 
         const data = await response.json();
 
