@@ -174,6 +174,7 @@ async function fetchDrivingDirections(origin: string, destination: string): Prom
             headers: {
                 'Content-Type': 'application/json',
                 'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+                'Referer': 'https://commutejs.vercel.app/',
                 'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.legs.staticDuration',
             },
             body: JSON.stringify(requestBody),
@@ -234,6 +235,7 @@ async function fetchTransitDirections(origin: string, destination: string, depar
             headers: {
                 'Content-Type': 'application/json',
                 'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+                'Referer': 'https://commutejs.vercel.app/',
                 'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.legs.staticDuration,routes.legs.steps.transitDetails',
             },
             body: JSON.stringify(requestBody),
