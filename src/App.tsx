@@ -19,7 +19,7 @@ type CommuteSegment = {
   duration: string;
   distance: string;
   traffic?: string;
-  mode?: 'drive' | 'walk' | 'train' | 'path';
+  mode?: 'drive' | 'walk' | 'train' | 'path' | 'bus';
   departureTime?: string;
 };
 
@@ -98,12 +98,13 @@ function ModeIcon({ mode }: { mode?: 'drive' | 'walk' | 'train' | 'path' }) {
 }
 
 // Helper to get mode label
-function getModeLabel(mode?: 'drive' | 'walk' | 'train' | 'path'): string {
+function getModeLabel(mode?: 'drive' | 'walk' | 'train' | 'path' | 'bus'): string {
   switch (mode) {
     case 'drive': return 'Drive';
     case 'walk': return 'Walk';
     case 'train': return 'Train';
     case 'path': return 'PATH';
+    case 'bus': return 'Bus';
     default: return '';
   }
 }
