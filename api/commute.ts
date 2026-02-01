@@ -419,7 +419,10 @@ async function findNextBus(arrivalTime: Date, direction: 'eastbound' | 'westboun
 
 // ============ HANDLER ============
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-    const { direction } = req.query;
+    const { direction, now: clientNowStr } = req.query;
+
+    // Use client time if provided, otherwise server time
+    const baseNow = clientNowStr ? new Date(clientNowStr as string) : new Date();
 
     if (direction !== 'toOffice' && direction !== 'toHome') {
         return res.status(400).json({ error: 'Invalid direction. Use toOffice or toHome.' });
@@ -449,7 +452,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 let segmentHasError = false;
 
                 // Estimate arrival time at this segment (for transit lookups)
-                const estimatedArrivalAtSegment = new Date(Date.now() + estimatedTimeFromStart * 60000);
+                const estimatedArrivalAtSegment = new Date(baseNow.getTime() + estimatedTimeFromStart * 60000);
 
                 if (segConfig.type === 'drive') {
                     const driveRes = await fetchDrivingDirections(LOCATIONS[segConfig.from].address, LOCATIONS[segConfig.to].address);
@@ -578,7 +581,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 } else {
                     let totalMinutes = 0;
                     if (segments[0].departureTime && segments[segments.length - 1].arrivalTime) {
-                        totalMinutes = parseTimeMinutes(segments[segments.length - 1].arrivalTime!) - parseTimeMinutes(segments[0].departureTime);
+                        const dep = parseTimeToDate(segments[0].departureTime);
+                        const arr = parseTimeToDate(segments[segments.length - 1].arrivalTime!);
+                        if (dep && arr) {
+                            let diff = (arr.getTime() - dep.getTime()) / 60000;
+                            if (diff < 0) diff += 1440; // Add 24 hours if crossed midnight
+                            totalMinutes = Math.round(diff);
+                        }
                     }
                     routes.push({ name: routeConfig.name, segments, totalTime: formatDuration(totalMinutes), eta: segments[segments.length - 1].arrivalTime || 'Unknown', isBest: false });
                 }

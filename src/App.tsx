@@ -310,7 +310,8 @@ function App() {
   // Fetch commute data from backend API
   const fetchCommuteData = async (dir: 'toOffice' | 'toHome') => {
     try {
-      const response = await fetch(`/api/commute?direction=${dir}`);
+      const now = new Date().toISOString();
+      const response = await fetch(`/api/commute?direction=${dir}&now=${encodeURIComponent(now)}`);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || `API error: ${response.status}`);
