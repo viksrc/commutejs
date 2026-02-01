@@ -120,6 +120,48 @@ body {
   to { transform: rotate(360deg); }
 }
 
+/* Error State */
+.error-container {
+  padding: 40px 20px;
+  text-align: center;
+  background-color: var(--bg-card);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.error-message {
+  font-size: 17px;
+  font-weight: 600;
+  color: #ff3b30;
+  margin-bottom: 8px;
+}
+
+.error-details {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.retry-button {
+  padding: 10px 24px;
+  border: none;
+  border-radius: 8px;
+  background-color: var(--blue);
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.retry-button:hover {
+  transform: scale(1.02);
+}
+
+.retry-button:active {
+  transform: scale(0.98);
+}
+
 /* Route Cards */
 .route-card {
   background-color: var(--bg-card);
