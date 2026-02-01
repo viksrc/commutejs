@@ -168,6 +168,17 @@ function openGoogleMaps(segment: CommuteSegment) {
   window.open(url, '_blank');
 }
 
+// Helper to format "Leave in X mins" display
+function formatLeaveTime(minutes: number): string {
+  if (minutes <= 0) return 'Now!';
+  if (minutes < 60) return `${minutes}m`;
+
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+}
+
+
 // Helper to parse duration string to minutes
 function parseDurationToMinutes(duration: string): number {
   const hoursMatch = duration.match(/(\d+)h/);
@@ -426,7 +437,7 @@ function App() {
                       </button>
                       {route.leaveInMins !== undefined && (
                         <span className={`leave-time ${route.leaveInMins <= 0 ? 'urgent' : route.leaveInMins <= 5 ? 'soon' : ''}`}>
-                          Leave: {route.leaveInMins <= 0 ? 'Now!' : `${route.leaveInMins}m`}
+                          Leave: {formatLeaveTime(route.leaveInMins)}
                         </span>
                       )}
                       <span className="eta">ETA: {route.eta}</span>
