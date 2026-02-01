@@ -5,13 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { LOCATIONS } from './config/locations';
-import { ROUTES_CONFIG } from './config/routes';
-import {
-  fetchDrivingDirections,
-  fetchTransitDirections,
-  calculateTotalDuration,
-} from './services/googleMapsService';
-import { getSchedule, findNextBus } from './services/lakelandBusService';
+import { getSchedule } from './services/lakelandBusService';
 
 // Types for commute data
 type CommuteSegment = {
@@ -174,61 +168,6 @@ function openGoogleMaps(segment: CommuteSegment) {
   window.open(url, '_blank');
 }
 
-// Helper function to get Date object for departure time
-function getDepartureTimeDate(segments: CommuteSegment[]): Date {
-  const now = new Date();
-
-  // If there are segments, check if the last one has an arrival time
-  if (segments.length > 0) {
-    const lastSegment = segments[segments.length - 1];
-    if (lastSegment.arrivalTime) {
-      const arrivalDate = parseTimeToDate(lastSegment.arrivalTime);
-      if (arrivalDate) return arrivalDate;
-    }
-  }
-
-  // Fallback: total duration added to now
-  const totalMinutesStr = calculateTotalDuration(segments);
-  const totalMinutes = parseDurationToMinutes(totalMinutesStr);
-  return new Date(now.getTime() + totalMinutes * 60000);
-}
-
-// Helper function to calculate ETA based on segments with transit schedules
-function calculateETA(segments: CommuteSegment[]): string {
-  let currentTime = new Date();
-
-  for (const segment of segments) {
-    // If this segment has a scheduled departure time, we may need to wait
-    if (segment.departureTime) {
-      const departureDate = parseTimeToDate(segment.departureTime);
-      if (departureDate && departureDate > currentTime) {
-        // Wait for the scheduled departure
-        currentTime = departureDate;
-      }
-    }
-
-    // If segment has arrival time, use it directly
-    if (segment.arrivalTime) {
-      const arrivalDate = parseTimeToDate(segment.arrivalTime);
-      if (arrivalDate) {
-        currentTime = arrivalDate;
-        continue;
-      }
-    }
-
-    // Otherwise, add the segment duration to current time
-    const durationMinutes = parseDurationToMinutes(segment.duration);
-    currentTime = new Date(currentTime.getTime() + durationMinutes * 60000);
-  }
-
-  // Format as "HH:MM AM/PM"
-  return currentTime.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  });
-}
-
 // Helper to parse duration string to minutes
 function parseDurationToMinutes(duration: string): number {
   const hoursMatch = duration.match(/(\d+)h/);
@@ -262,30 +201,6 @@ function parseTimeToDate(timeStr: string): Date | null {
   const now = new Date();
   const result = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0);
   return result;
-}
-
-// Helper to format Date to AM/PM string
-function formatTimeToAMPM(date: Date): string {
-  return date.toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  }).replace(/^0/, ''); // Remove leading zero if present
-}
-
-// Calculate arrival time from departure time + duration
-function calculateArrivalTime(departureTime: string, duration: string): string | null {
-  const depDate = parseTimeToDate(departureTime);
-  if (!depDate) return null;
-
-  const durationMinutes = parseDurationToMinutes(duration);
-  const arrivalDate = new Date(depDate.getTime() + durationMinutes * 60000);
-
-  return arrivalDate.toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  });
 }
 
 // Calculate "Leave in X mins" based on first transit departure time
@@ -382,138 +297,22 @@ function App() {
     getSchedule().catch(err => console.error('Bus schedule load failed:', err));
   }, []);
 
-  // Fetch commute data using Google Maps API
+  // Fetch commute data from backend API
   const fetchCommuteData = async (dir: 'toOffice' | 'toHome') => {
     setLoading(true);
     try {
-      const routes: RouteOption[] = [];
-
-      // Process each route from config
-      const routeConfigs = ROUTES_CONFIG[dir];
-
-      for (const routeConfig of routeConfigs) {
-        const segments: CommuteSegment[] = [];
-        let skipRoute = false;
-
-        // Process each segment in the route
-        for (const segConfig of routeConfig.segments) {
-          if (skipRoute) break;
-
-          let segment: CommuteSegment | null = null;
-          const startTimeDate = getDepartureTimeDate(segments);
-
-          switch (segConfig.type) {
-            case 'drive': {
-              const driveResult = await fetchDrivingDirections(
-                LOCATIONS[segConfig.from].address,
-                LOCATIONS[segConfig.to].address
-              );
-              if (driveResult) {
-                segment = {
-                  ...driveResult,
-                  from: segConfig.fromLabel,
-                  to: segConfig.toLabel,
-                  mode: 'drive',
-                };
-              }
-              break;
-            }
-
-            case 'walk': {
-              segment = {
-                from: segConfig.fromLabel,
-                to: segConfig.toLabel,
-                duration: segConfig.duration,
-                distance: '-',
-                traffic: 'Walk',
-                mode: 'walk',
-              };
-              break;
-            }
-
-            case 'transit': {
-              const transitResult = await fetchTransitDirections(
-                LOCATIONS[segConfig.from].address,
-                LOCATIONS[segConfig.to].address,
-                startTimeDate
-              );
-              if (transitResult) {
-                segment = {
-                  ...transitResult,
-                  from: segConfig.fromLabel,
-                  to: segConfig.toLabel,
-                  mode: segConfig.mode,
-                };
-              }
-              break;
-            }
-
-            case 'bus': {
-              const nextBus = await findNextBus(startTimeDate, segConfig.direction);
-
-              if (nextBus) {
-                const busDrivingTime = await fetchDrivingDirections(
-                  LOCATIONS[segConfig.from].address,
-                  LOCATIONS[segConfig.to].address
-                );
-
-                const busDuration = busDrivingTime?.duration || '45m';
-                const busArrival = calculateArrivalTime(nextBus.departureTime, busDuration);
-
-                segment = {
-                  from: segConfig.fromLabel,
-                  to: segConfig.toLabel,
-                  duration: busDuration,
-                  distance: busDrivingTime?.distance || '30 mi',
-                  traffic: `Departs ${nextBus.departureTime}`,
-                  mode: 'bus',
-                  departureTime: nextBus.departureTime,
-                  arrivalTime: busArrival || undefined,
-                };
-              } else {
-                console.warn(`No Lakeland bus available for ${routeConfig.name}`);
-                skipRoute = true;
-              }
-              break;
-            }
-          }
-
-          if (segment) {
-            // Fill in missing times for drive/walk/others
-            if (!segment.departureTime) {
-              segment.departureTime = formatTimeToAMPM(startTimeDate);
-            }
-            if (!segment.arrivalTime) {
-              segment.arrivalTime = calculateArrivalTime(segment.departureTime, segment.duration) || undefined;
-            }
-            segments.push(segment);
-          }
-        }
-
-        // Add route if not skipped
-        if (!skipRoute && segments.length > 0) {
-          routes.push({
-            name: routeConfig.name,
-            totalTime: calculateTotalDuration(segments),
-            eta: calculateETA(segments),
-            segments,
-            leaveInMins: calculateLeaveInMins(segments, routeConfig.name) ?? undefined,
-          });
-        }
+      const response = await fetch(`/api/commute?direction=${dir}`);
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
       }
 
-      // Determine best route (shortest time)
-      if (routes.length > 1) {
-        routes.sort((a, b) => {
-          const getMinutes = (time: string) => {
-            const h = time.match(/(\d+)h/);
-            const m = time.match(/(\d+)m/);
-            return (h ? parseInt(h[1]) * 60 : 0) + (m ? parseInt(m[1]) : 0);
-          };
-          return getMinutes(a.totalTime) - getMinutes(b.totalTime);
-        });
-        routes[0].isBest = true;
-      }
+      const apiData = await response.json();
+
+      // Calculate leave in mins for each route (still done client-side for real-time accuracy)
+      const routes = apiData.routes.map((route: RouteOption) => ({
+        ...route,
+        leaveInMins: calculateLeaveInMins(route.segments, route.name) ?? undefined,
+      }));
 
       const data: CommuteData = {
         direction: dir,
@@ -526,7 +325,6 @@ function App() {
       console.error('Error fetching commute data:', error);
     } finally {
       setLoading(false);
-
     }
   };
 
