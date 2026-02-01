@@ -1,5 +1,4 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { JSDOM } from 'jsdom';
 
 // ============ TYPES ============
 interface CommuteSegment {
@@ -265,17 +264,29 @@ let serverCache: { data: CachedScheduleData | null; timestamp: number } = { data
 const CACHE_TTL = 24 * 60 * 60 * 1000;
 
 function parseScheduleHTML(html: string, stopName: string): string[] {
-    const dom = new JSDOM(html);
-    const doc = dom.window.document;
-    const rows = Array.from(doc.querySelectorAll('tr.stop-schedule'));
-    const stopRow = rows.find((row: any) => row.querySelector('.s-name')?.textContent?.includes(stopName));
-    if (!stopRow) return [];
-    const times: string[] = [];
-    (stopRow as any).querySelectorAll('td .s-time span').forEach((span: any) => {
-        const time = span.textContent?.trim();
-        if (time && time !== '-') times.push(time);
-    });
-    return times;
+    // Find the row containing the stop name using regex
+    const rowRegex = /<tr[^>]*class="[^"]*stop-schedule[^"]*"[^>]*>([\s\S]*?)<\/tr>/gi;
+    let match;
+
+    while ((match = rowRegex.exec(html)) !== null) {
+        const rowHtml = match[1];
+        // Check if this row contains the stop name
+        if (rowHtml.includes(stopName)) {
+            // Extract times from s-time spans
+            const timeRegex = /<span[^>]*>(\d{1,2}:\d{2})<\/span>/g;
+            const times: string[] = [];
+            let timeMatch;
+
+            while ((timeMatch = timeRegex.exec(rowHtml)) !== null) {
+                const time = timeMatch[1].trim();
+                if (time && time !== '-') {
+                    times.push(time);
+                }
+            }
+            return times;
+        }
+    }
+    return [];
 }
 
 function addAmPm(times: string[], direction: 'eastbound' | 'westbound', isWeekend: boolean): string[] {
