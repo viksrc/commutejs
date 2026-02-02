@@ -7,7 +7,7 @@ import { useState, useEffect } from 'react';
 import { LOCATIONS } from './config/locations';
 import { getSchedule } from './services/lakelandBusService';
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 
 // Types for commute data - times are ISO 8601 UTC from API
 type CommuteSegment = {
@@ -81,6 +81,12 @@ const MapIcon = () => (
 const ChevronIcon = ({ expanded }: { expanded: boolean }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14" style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
     <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+  </svg>
+);
+
+const ClockIcon = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+    <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
   </svg>
 );
 
@@ -225,6 +231,11 @@ function App() {
 
   const [expandedRoutes, setExpandedRoutes] = useState<Set<number>>(new Set()); // No routes expanded by default
 
+  // Departure time selection
+  const [departureMode, setDepartureMode] = useState<'now' | 'scheduled'>('now');
+  const [scheduledTime, setScheduledTime] = useState<Date | null>(null);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+
   // Get current commute data based on direction
   const commuteData = direction === 'toOffice' ? toOfficeData : toHomeData;
 
@@ -242,10 +253,10 @@ function App() {
   }, []);
 
   // Fetch commute data from backend API
-  const fetchCommuteData = async (dir: 'toOffice' | 'toHome') => {
+  const fetchCommuteData = async (dir: 'toOffice' | 'toHome', departureTime?: Date) => {
     try {
-      // Send current time as ISO 8601 UTC
-      const asOf = new Date().toISOString();
+      // Use scheduled time if provided, otherwise current time
+      const asOf = (departureTime || new Date()).toISOString();
       const response = await fetch(`/api/commute?direction=${dir}&asOf=${encodeURIComponent(asOf)}`);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -276,14 +287,14 @@ function App() {
   };
 
   // Fetch both directions
-  const fetchBothDirections = async () => {
+  const fetchBothDirections = async (departureTime?: Date) => {
     setLoading(true);
     setError(null);
     try {
       // Fetch both directions in parallel
       const [officeData, homeData] = await Promise.all([
-        fetchCommuteData('toOffice'),
-        fetchCommuteData('toHome'),
+        fetchCommuteData('toOffice', departureTime),
+        fetchCommuteData('toHome', departureTime),
       ]);
       setToOfficeData(officeData);
       setToHomeData(homeData);
@@ -327,6 +338,71 @@ function App() {
           <h1 className="title">Commute Info</h1>
         </div>
 
+        {/* Departure Time Selector */}
+        <div className="departure-selector">
+          <button
+            className="departure-button"
+            onClick={() => setShowTimePicker(!showTimePicker)}
+          >
+            <ClockIcon />
+            <span className="departure-label">
+              {departureMode === 'now' ? 'Leave Now' : scheduledTime ? scheduledTime.toLocaleString('en-US', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+              }) : 'Leave Now'}
+            </span>
+            <ChevronIcon expanded={showTimePicker} />
+          </button>
+
+          {showTimePicker && (
+            <div className="time-picker-dropdown">
+              <button
+                className={`time-option ${departureMode === 'now' ? 'active' : ''}`}
+                onClick={() => {
+                  setDepartureMode('now');
+                  setScheduledTime(null);
+                  setShowTimePicker(false);
+                  fetchBothDirections();
+                }}
+              >
+                Leave Now
+              </button>
+              <div className="time-picker-divider" />
+              <div className="time-picker-inputs">
+                <label className="time-picker-label">Depart at:</label>
+                <input
+                  type="datetime-local"
+                  className="datetime-input"
+                  value={scheduledTime ? new Date(scheduledTime.getTime() - scheduledTime.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      const newTime = new Date(e.target.value);
+                      setScheduledTime(newTime);
+                      setDepartureMode('scheduled');
+                    }
+                  }}
+                />
+                <button
+                  className="apply-time-button"
+                  onClick={() => {
+                    if (scheduledTime) {
+                      setShowTimePicker(false);
+                      fetchBothDirections(scheduledTime);
+                    }
+                  }}
+                  disabled={!scheduledTime}
+                >
+                  Apply
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Direction Toggle */}
         <div className="toggle-container">
           <button
@@ -352,7 +428,7 @@ function App() {
           <div className="error-container">
             <p className="error-message">Failed to load routes</p>
             <p className="error-details">{error}</p>
-            <button className="retry-button" onClick={fetchBothDirections}>
+            <button className="retry-button" onClick={() => fetchBothDirections(departureMode === 'scheduled' ? scheduledTime || undefined : undefined)}>
               Retry
             </button>
           </div>
