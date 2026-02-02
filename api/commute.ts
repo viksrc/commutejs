@@ -411,9 +411,21 @@ async function findNextBus(arrivalTimeUTC: Date, direction: 'eastbound' | 'westb
     const nyTime = getTimeInNY(arrivalTimeUTC);
     const type = (nyTime.dayOfWeek === 0 || nyTime.dayOfWeek === 6) ? 'weekend' : 'weekday';
     const times = schedule.schedules[type][direction];
-    if (!times || times.length === 0) return null;
+
+    console.log(`[findNextBus] direction=${direction}, type=${type}, arrivalTimeUTC=${arrivalTimeUTC.toISOString()}`);
+    console.log(`[findNextBus] nyTime: hours=${nyTime.hours}, minutes=${nyTime.minutes}, dayOfWeek=${nyTime.dayOfWeek}`);
+    console.log(`[findNextBus] schedule times count: ${times?.length || 0}`);
+    if (times?.length > 0) {
+        console.log(`[findNextBus] first few times: ${times.slice(0, 3).join(', ')}`);
+    }
+
+    if (!times || times.length === 0) {
+        console.log(`[findNextBus] No times available for ${type} ${direction}`);
+        return null;
+    }
 
     const arrivalMinutesInNY = nyTime.hours * 60 + nyTime.minutes;
+    console.log(`[findNextBus] arrivalMinutesInNY=${arrivalMinutesInNY} (${Math.floor(arrivalMinutesInNY/60)}:${arrivalMinutesInNY%60})`);
 
     // Find the next bus (times are like "4:50 AM", "5:20 AM", etc.)
     for (const timeStr of times) {
@@ -433,11 +445,13 @@ async function findNextBus(arrivalTimeUTC: Date, direction: 'eastbound' | 'westb
             const departureTimeUTC = nyTimeStringToUTC(timeStr, arrivalTimeUTC);
             if (departureTimeUTC) {
                 const waitSeconds = (departureTimeUTC.getTime() - arrivalTimeUTC.getTime()) / 1000;
+                console.log(`[findNextBus] Found bus: ${timeStr} -> ${departureTimeUTC.toISOString()}, wait=${waitSeconds}s`);
                 return { departureTimeUTC, waitSeconds };
             }
         }
     }
 
+    console.log(`[findNextBus] No buses found after ${arrivalMinutesInNY} minutes in NY time`);
     return null; // No more buses today
 }
 
