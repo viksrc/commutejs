@@ -7,6 +7,8 @@ import { useState, useEffect } from 'react';
 import { LOCATIONS } from './config/locations';
 import { getSchedule } from './services/lakelandBusService';
 
+const APP_VERSION = '1.0.0';
+
 // Types for commute data - times are ISO 8601 UTC from API
 type CommuteSegment = {
   from: string;
@@ -471,8 +473,8 @@ function App() {
               );
             })}
 
-            {/* Last Updated */}
-            <p className="updated-text">Updated {formatTimeForDisplay(commuteData.lastUpdated)}</p>
+            {/* Last Updated & Version */}
+            <p className="updated-text">Updated {formatTimeForDisplay(commuteData.lastUpdated)} • v{APP_VERSION}</p>
           </>
         ) : null}
       </div>
