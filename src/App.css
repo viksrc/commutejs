@@ -73,6 +73,137 @@ body {
   display: none;
 }
 
+/* Departure Time Selector */
+.departure-selector {
+  position: relative;
+  margin-bottom: 16px;
+}
+
+.departure-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  border-radius: 12px;
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  transition: all 0.2s ease;
+}
+
+.departure-button:hover {
+  opacity: 0.9;
+}
+
+.departure-button svg {
+  color: var(--blue);
+  flex-shrink: 0;
+}
+
+.departure-label {
+  flex: 1;
+  text-align: left;
+}
+
+.time-picker-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background-color: var(--bg-card);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.time-option {
+  display: block;
+  width: 100%;
+  padding: 14px 16px;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.time-option:hover {
+  background-color: var(--bg-toggle);
+}
+
+.time-option.active {
+  color: var(--blue);
+}
+
+.time-option.active::before {
+  content: '✓ ';
+}
+
+.time-picker-divider {
+  height: 1px;
+  background-color: var(--border-color);
+  margin: 0 16px;
+}
+
+.time-picker-inputs {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.time-picker-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.datetime-input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--bg-toggle);
+  color: var(--text-primary);
+  font-size: 15px;
+  font-family: inherit;
+}
+
+.datetime-input:focus {
+  outline: none;
+  border-color: var(--blue);
+}
+
+.apply-time-button {
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  background-color: var(--blue);
+  color: white;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.apply-time-button:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.apply-time-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Direction Toggle - iOS Segmented Control Style */
 .toggle-container {
   display: flex;
