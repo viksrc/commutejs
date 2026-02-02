@@ -57,7 +57,12 @@ function addAmPm(times: string[], direction: 'eastbound' | 'westbound', isWeeken
 
 export async function getSchedule(): Promise<CachedScheduleData> {
     const now = Date.now();
-    if (serverCache.data && (now - serverCache.timestamp < CACHE_TTL)) return serverCache.data;
+    if (serverCache.data && (now - serverCache.timestamp < CACHE_TTL)) {
+        console.log('[getSchedule] Returning cached schedule');
+        return serverCache.data;
+    }
+
+    console.log('[getSchedule] Fetching fresh schedule from Lakeland...');
 
     const fetchHTML = async (id: string) => {
         const resp = await fetch(`https://www.lakelandbus.com/wp-admin/admin-ajax.php?action=schedule&id=${id}`, {
@@ -73,16 +78,24 @@ export async function getSchedule(): Promise<CachedScheduleData> {
         fetchHTML(SCHEDULE_IDS.weekendWestbound),
     ]);
 
+    const weekdayEastbound = addAmPm(parseScheduleHTML(weekdayEastHTML, 'Parsippany (Waterview P&R)'), 'eastbound', false);
+    const weekdayWestbound = addAmPm(parseScheduleHTML(weekdayWestHTML, 'NY PABT'), 'westbound', false);
+    const weekendEastbound = addAmPm(parseScheduleHTML(weekendEastHTML, 'Parsippany (Waterview P&R)'), 'eastbound', true);
+    const weekendWestbound = addAmPm(parseScheduleHTML(weekendWestHTML, 'Depart New York PABT'), 'westbound', true);
+
+    console.log(`[getSchedule] Parsed schedules - weekday eastbound: ${weekdayEastbound.length}, westbound: ${weekdayWestbound.length}`);
+    console.log(`[getSchedule] Parsed schedules - weekend eastbound: ${weekendEastbound.length}, westbound: ${weekendWestbound.length}`);
+
     const scheduleData: CachedScheduleData = {
         timestamp: now,
         schedules: {
             weekday: {
-                eastbound: addAmPm(parseScheduleHTML(weekdayEastHTML, 'Parsippany (Waterview P&R)'), 'eastbound', false),
-                westbound: addAmPm(parseScheduleHTML(weekdayWestHTML, 'NY PABT'), 'westbound', false)
+                eastbound: weekdayEastbound,
+                westbound: weekdayWestbound
             },
             weekend: {
-                eastbound: addAmPm(parseScheduleHTML(weekendEastHTML, 'Parsippany (Waterview P&R)'), 'eastbound', true),
-                westbound: addAmPm(parseScheduleHTML(weekendWestHTML, 'Depart New York PABT'), 'westbound', true)
+                eastbound: weekendEastbound,
+                westbound: weekendWestbound
             },
         },
     };
