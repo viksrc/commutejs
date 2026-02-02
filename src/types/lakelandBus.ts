@@ -2,13 +2,13 @@ export type BusDirection = 'eastbound' | 'westbound';
 export type DayType = 'weekday' | 'weekend';
 
 export interface BusSchedule {
-  eastbound: string[];  // e.g., ["5:20 AM", "5:50 AM", ...]
-  westbound: string[];  // e.g., ["3:00 PM", "3:15 PM", ...]
+  eastbound: string[];  // "HH:MM" format (24-hour, America/New_York timezone)
+  westbound: string[];  // "HH:MM" format (24-hour, America/New_York timezone)
 }
 
 export interface CachedScheduleData {
   timestamp: number;
-  fetchedAt: string;
+  fetchedAt?: string;
   schedules: {
     weekday: BusSchedule;
     weekend: BusSchedule;
@@ -16,6 +16,5 @@ export interface CachedScheduleData {
 }
 
 export interface NextBus {
-  departureTime: string;  // "6:20 AM"
-  waitMinutes: number;    // 15
+  departureTime: string;  // ISO 8601 UTC format (e.g., "2026-02-02T14:50:00.000Z")
 }

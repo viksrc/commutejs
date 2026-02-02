@@ -5,6 +5,8 @@ import { CachedScheduleData } from '../types/lakelandBus';
  * Used when dynamic fetching fails and cache is unavailable/too old
  * Manually transcribed from https://www.lakelandbus.com/route46/
  * Last verified: 2026-01-29
+ *
+ * Times are in 24-hour "HH:MM" format, America/New_York timezone
  */
 export const FALLBACK_SCHEDULE: CachedScheduleData = {
   timestamp: Date.now(),
@@ -12,29 +14,29 @@ export const FALLBACK_SCHEDULE: CachedScheduleData = {
   schedules: {
     weekday: {
       eastbound: [
-        "4:50 AM", "5:20 AM", "5:50 AM", "6:20 AM", "6:50 AM",
-        "7:20 AM", "7:50 AM", "8:20 AM", "8:50 AM", "9:20 AM",
-        "10:20 AM", "11:20 AM", "12:20 PM", "1:20 PM", "2:20 PM",
-        "3:20 PM", "4:20 PM", "5:20 PM", "6:20 PM", "7:20 PM",
-        "8:20 PM", "9:20 PM"
+        "04:50", "05:20", "05:50", "06:20", "06:50",
+        "07:20", "07:50", "08:20", "08:50", "09:20",
+        "10:20", "11:20", "12:20", "13:20", "14:20",
+        "15:20", "16:20", "17:20", "18:20", "19:20",
+        "20:20", "21:20"
       ],
       westbound: [
-        "7:30 AM", "8:30 AM", "9:30 AM", "10:30 AM", "11:30 AM",
-        "1:00 PM", "2:00 PM", "2:30 PM", "3:00 PM", "3:15 PM",
-        "3:30 PM", "3:45 PM", "4:00 PM", "4:15 PM", "4:30 PM",
-        "4:45 PM", "5:00 PM", "5:15 PM", "5:30 PM", "5:45 PM",
-        "6:00 PM", "6:15 PM", "6:30 PM", "7:00 PM", "7:30 PM",
-        "8:30 PM", "9:30 PM", "10:30 PM"
+        "07:30", "08:30", "09:30", "10:30", "11:30",
+        "13:00", "14:00", "14:30", "15:00", "15:15",
+        "15:30", "15:45", "16:00", "16:15", "16:30",
+        "16:45", "17:00", "17:15", "17:30", "17:45",
+        "18:00", "18:15", "18:30", "19:00", "19:30",
+        "20:30", "21:30", "22:30"
       ]
     },
     weekend: {
       eastbound: [
-        "7:20 AM", "9:20 AM", "11:20 AM", "1:20 PM", "3:20 PM",
-        "5:20 PM", "7:20 PM", "9:20 PM"
+        "07:20", "09:20", "11:20", "13:20", "15:20",
+        "17:20", "19:20", "21:20"
       ],
       westbound: [
-        "9:00 AM", "11:00 AM", "1:00 PM", "3:00 PM", "5:00 PM",
-        "7:00 PM", "9:00 PM", "11:00 PM"
+        "09:00", "11:00", "13:00", "15:00", "17:00",
+        "19:00", "21:00", "23:00"
       ]
     }
   }

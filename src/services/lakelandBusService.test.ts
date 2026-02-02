@@ -1,362 +1,308 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fetchSchedule, findNextBus } from './lakelandBusService';
 
-// Real HTML sample from Lakeland Bus website
-const SAMPLE_WEEKDAY_EASTBOUND_HTML = `
-<div class="schedule-detail-popup">
-  <h1>Route 46 Online Monday To Friday</h1>
-  <h3>RT.46/80 Weekday Eastbound Schedule</h3>
-  <div class="stop-schedule-container">
-    <table>
-      <tr class="stop-schedule">
-        <td class="wg-col-name">
-          <div class="s-name">Parsippany (Waterview P&R)</div>
-        </td>
-        <td><div class="s-time"><span>4:50</span></div></td>
-        <td><div class="s-time"><span>5:20</span></div></td>
-        <td><div class="s-time"><span>5:50</span></div></td>
-      </tr>
-      <tr class="stop-schedule">
-        <td class="wg-col-name">
-          <div class="s-name">NYPABT</div>
-        </td>
-        <td><div class="s-time"><span>5:45</span></div></td>
-        <td><div class="s-time"><span>6:15</span></div></td>
-        <td><div class="s-time"><span>6:45</span></div></td>
-      </tr>
-    </table>
-  </div>
-</div>
-`;
-
-const SAMPLE_WEEKDAY_WESTBOUND_HTML = `
-<div class="schedule-detail-popup">
-  <h1>Route 46 Online Monday To Friday</h1>
-  <h3>Rt. 46/80 Weekday Schedule Westbound</h3>
-  <div class="stop-schedule-container">
-    <table>
-      <tr class="stop-schedule">
-        <td class="wg-col-name">
-          <div class="s-name">NY PABT</div>
-        </td>
-        <td><div class="s-time"><span>4:00</span></div></td>
-        <td><div class="s-time"><span>4:30</span></div></td>
-        <td><div class="s-time"><span>5:00</span></div></td>
-      </tr>
-      <tr class="stop-schedule">
-        <td class="wg-col-name">
-          <div class="s-name">Parsippany (Waterview Park and Ride)</div>
-        </td>
-        <td><div class="s-time"><span>4:55</span></div></td>
-        <td><div class="s-time"><span>5:25</span></div></td>
-        <td><div class="s-time"><span>5:55</span></div></td>
-      </tr>
-    </table>
-  </div>
-</div>
-`;
-
-const SAMPLE_WEEKEND_HTML = `
-<div class="schedule-detail-popup">
-  <h1>Route 46 Online Weekend</h1>
-  <div class="stop-schedule-container">
-    <table>
-      <tr class="stop-schedule">
-        <td class="wg-col-name">
-          <div class="s-name">Parsippany (Waterview P&R)</div>
-        </td>
-        <td><div class="s-time"><span>7:00</span></div></td>
-        <td><div class="s-time"><span>9:00</span></div></td>
-      </tr>
-    </table>
-  </div>
-</div>
-`;
-
 describe('lakelandBusService', () => {
   beforeEach(() => {
-    // Clear localStorage before each test
-    localStorage.clear();
     vi.clearAllMocks();
   });
 
   describe('fetchSchedule', () => {
-    it('should fetch and parse all four schedules', async () => {
-      // Mock the fetch function with proper type checking
-      global.fetch = vi.fn((input: RequestInfo | URL) => {
-        const url = input.toString();
-        console.log('Mocking fetch for URL:', url);
+    it('should fetch schedule from backend API', async () => {
+      const mockSchedule = {
+        timestamp: Date.now(),
+        fetchedAt: '2026-01-29',
+        schedules: {
+          weekday: {
+            eastbound: ['04:50', '05:20', '05:50', '06:20'],
+            westbound: ['16:00', '16:30', '17:00'],
+          },
+          weekend: {
+            eastbound: ['07:20', '09:20'],
+            westbound: ['09:00', '11:00'],
+          },
+        },
+      };
 
-        // Return different HTML based on the schedule ID
-        if (url.includes('id=25')) {
-          console.log('Returning weekday eastbound HTML');
-          return Promise.resolve({
-            ok: true,
-            text: async () => SAMPLE_WEEKDAY_EASTBOUND_HTML,
-          } as Response);
-        } else if (url.includes('id=32')) {
-          console.log('Returning weekday westbound HTML');
-          return Promise.resolve({
-            ok: true,
-            text: async () => SAMPLE_WEEKDAY_WESTBOUND_HTML,
-          } as Response);
-        } else if (url.includes('id=26')) {
-          console.log('Returning weekend eastbound HTML');
-          return Promise.resolve({
-            ok: true,
-            text: async () => SAMPLE_WEEKEND_HTML,
-          } as Response);
-        } else if (url.includes('id=28')) {
-          console.log('Returning weekend westbound HTML (gate)');
-          // Weekend westbound uses different naming
-          return Promise.resolve({
-            ok: true,
-            text: async () => SAMPLE_WEEKEND_HTML.replace('Parsippany', 'LEAVES FROM GATE #'),
-          } as Response);
-        }
-        console.error('Unknown schedule ID in URL:', url);
-        return Promise.reject(new Error(`Unknown schedule ID in ${url}`));
-      });
+      global.fetch = vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: async () => mockSchedule,
+        } as Response)
+      );
 
       const schedule = await fetchSchedule();
 
       expect(schedule).toBeDefined();
       expect(schedule.schedules).toBeDefined();
-
-      // Check weekday schedules
-      expect(schedule.schedules.weekday.eastbound).toBeDefined();
-      expect(schedule.schedules.weekday.westbound).toBeDefined();
-
-      // Check weekend schedules
-      expect(schedule.schedules.weekend.eastbound).toBeDefined();
-      expect(schedule.schedules.weekend.westbound).toBeDefined();
-
-      // Verify fetch was called 4 times
-      expect(fetch).toHaveBeenCalledTimes(4);
+      expect(schedule.schedules.weekday.eastbound).toEqual(['04:50', '05:20', '05:50', '06:20']);
+      expect(schedule.schedules.weekday.westbound).toEqual(['16:00', '16:30', '17:00']);
+      expect(fetch).toHaveBeenCalledWith('/api/lakeland-bus');
     });
 
-    it('should parse Parsippany (Waterview P&R) stop correctly', async () => {
+    it('should return fallback schedule on API error', async () => {
       global.fetch = vi.fn(() =>
         Promise.resolve({
-          ok: true,
-          text: async () => SAMPLE_WEEKDAY_EASTBOUND_HTML,
+          ok: false,
+          status: 500,
         } as Response)
       );
 
       const schedule = await fetchSchedule();
 
-      // Should have parsed times for Waterview P&R
+      expect(schedule).toBeDefined();
       expect(schedule.schedules.weekday.eastbound.length).toBeGreaterThan(0);
-
-      // Times should have AM/PM added
-      expect(schedule.schedules.weekday.eastbound[0]).toMatch(/\d+:\d+\s+(AM|PM)/);
-
-      console.log('Parsed eastbound times:', schedule.schedules.weekday.eastbound);
+      expect(schedule.schedules.weekday.eastbound[0]).toMatch(/^\d{2}:\d{2}$/);
     });
 
-    it('should parse NY PABT stop correctly', async () => {
-      global.fetch = vi.fn(() =>
-        Promise.resolve({
-          ok: true,
-          text: async () => SAMPLE_WEEKDAY_WESTBOUND_HTML,
-        } as Response)
-      );
-
-      const schedule = await fetchSchedule();
-
-      // Should have parsed times for NY PABT
-      expect(schedule.schedules.weekday.westbound.length).toBeGreaterThan(0);
-
-      // Times should have AM/PM added
-      expect(schedule.schedules.weekday.westbound[0]).toMatch(/\d+:\d+\s+(AM|PM)/);
-
-      console.log('Parsed westbound times:', schedule.schedules.weekday.westbound);
-    });
-
-    it('should handle empty schedules gracefully', async () => {
-      const emptyHTML = '<div class="schedule-detail-popup"></div>';
-
-      global.fetch = vi.fn(() =>
-        Promise.resolve({
-          ok: true,
-          text: async () => emptyHTML,
-        } as Response)
-      );
-
-      const schedule = await fetchSchedule();
-
-      // Should return schedule with empty arrays
-      expect(schedule.schedules.weekday.eastbound).toEqual([]);
-      expect(schedule.schedules.weekday.westbound).toEqual([]);
-    });
-
-    it('should throw error on fetch failure', async () => {
+    it('should return fallback schedule on network error', async () => {
       global.fetch = vi.fn(() =>
         Promise.reject(new Error('Network error'))
       );
 
-      await expect(fetchSchedule()).rejects.toThrow('Network error');
+      const schedule = await fetchSchedule();
+
+      expect(schedule).toBeDefined();
+      expect(schedule.schedules.weekday.eastbound.length).toBeGreaterThan(0);
     });
   });
 
   describe('findNextBus', () => {
-    it('should find next bus after arrival time', async () => {
-      // Set up mock schedule in cache
-      const mockSchedule = {
-        timestamp: Date.now(),
-        fetchedAt: new Date().toISOString(),
-        schedules: {
-          weekday: {
-            eastbound: ['6:00 AM', '7:00 AM', '8:00 AM', '9:00 AM'],
-            westbound: ['5:00 PM', '6:00 PM', '7:00 PM'],
-          },
-          weekend: {
-            eastbound: ['8:00 AM', '10:00 AM'],
-            westbound: ['2:00 PM', '4:00 PM'],
-          },
-        },
-      };
+    const createMockSchedule = (weekdayEast: string[], weekdayWest: string[] = [], weekendEast: string[] = [], weekendWest: string[] = []) => ({
+      timestamp: Date.now(),
+      fetchedAt: '2026-01-29',
+      schedules: {
+        weekday: { eastbound: weekdayEast, westbound: weekdayWest },
+        weekend: { eastbound: weekendEast, westbound: weekendWest },
+      },
+    });
 
-      localStorage.setItem(
-        'lakeland-bus-route46-schedule',
-        JSON.stringify({
-          data: mockSchedule,
-          timestamp: Date.now(),
-        })
+    const mockFetch = (schedule: ReturnType<typeof createMockSchedule>) => {
+      global.fetch = vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: async () => schedule,
+        } as Response)
       );
+    };
 
-      // Test finding bus at 6:30 AM on a Monday
-      const testDate = new Date('2024-01-15T06:30:00'); // Monday
+    it('should return ISO 8601 UTC string', async () => {
+      mockFetch(createMockSchedule(['06:00', '07:00', '08:00']));
+
+      const testDate = new Date('2026-02-02T11:30:00Z'); // 6:30 AM ET (EST)
       const result = await findNextBus(testDate, 'eastbound');
 
       expect(result).toBeDefined();
-      expect(result?.departureTime).toBe('7:00 AM');
-      expect(result?.waitMinutes).toBe(30);
+      expect(result?.departureTime).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/);
     });
 
-    it('should return null if no bus is available', async () => {
-      const mockSchedule = {
-        timestamp: Date.now(),
-        fetchedAt: new Date().toISOString(),
-        schedules: {
-          weekday: {
-            eastbound: ['6:00 AM', '7:00 AM'],
-            westbound: [],
-          },
-          weekend: {
-            eastbound: [],
-            westbound: [],
-          },
-        },
-      };
+    it('should NOT return waitMinutes (removed in refactor)', async () => {
+      mockFetch(createMockSchedule(['06:00', '07:00']));
 
-      localStorage.setItem(
-        'lakeland-bus-route46-schedule',
-        JSON.stringify({
-          data: mockSchedule,
-          timestamp: Date.now(),
-        })
-      );
+      const testDate = new Date('2026-02-02T11:30:00Z');
+      const result = await findNextBus(testDate, 'eastbound');
 
-      // Test after last bus
-      const testDate = new Date('2024-01-15T20:00:00'); // 8 PM Monday
+      expect((result as any)?.waitMinutes).toBeUndefined();
+    });
+
+    it('should find next bus when arriving before first bus', async () => {
+      mockFetch(createMockSchedule(['06:00', '07:00', '08:00']));
+
+      // 5:00 AM ET = 10:00 UTC (EST)
+      const testDate = new Date('2026-02-02T10:00:00Z');
+      const result = await findNextBus(testDate, 'eastbound');
+
+      expect(result).toBeDefined();
+      // Should get 6:00 AM ET = 11:00 UTC
+      const resultDate = new Date(result!.departureTime);
+      expect(resultDate.getUTCHours()).toBe(11);
+      expect(resultDate.getUTCMinutes()).toBe(0);
+    });
+
+    it('should find next bus when arriving between buses', async () => {
+      mockFetch(createMockSchedule(['06:00', '07:00', '08:00']));
+
+      // 6:30 AM ET = 11:30 UTC (EST)
+      const testDate = new Date('2026-02-02T11:30:00Z');
+      const result = await findNextBus(testDate, 'eastbound');
+
+      expect(result).toBeDefined();
+      // Should get 7:00 AM ET = 12:00 UTC
+      const resultDate = new Date(result!.departureTime);
+      expect(resultDate.getUTCHours()).toBe(12);
+      expect(resultDate.getUTCMinutes()).toBe(0);
+    });
+
+    it('should return bus at exact arrival time', async () => {
+      mockFetch(createMockSchedule(['06:00', '07:00', '08:00']));
+
+      // Exactly 7:00 AM ET = 12:00 UTC (EST)
+      const testDate = new Date('2026-02-02T12:00:00Z');
+      const result = await findNextBus(testDate, 'eastbound');
+
+      expect(result).toBeDefined();
+      // Should get 7:00 AM ET (the exact match)
+      const resultDate = new Date(result!.departureTime);
+      expect(resultDate.getUTCHours()).toBe(12);
+    });
+
+    it('should return null after last bus', async () => {
+      mockFetch(createMockSchedule(['06:00', '07:00']));
+
+      // 8:00 PM ET = 01:00 UTC next day (EST)
+      const testDate = new Date('2026-02-03T01:00:00Z');
       const result = await findNextBus(testDate, 'eastbound');
 
       expect(result).toBeNull();
     });
 
-    it('should handle weekend schedules correctly', async () => {
-      const mockSchedule = {
-        timestamp: Date.now(),
-        fetchedAt: new Date().toISOString(),
-        schedules: {
-          weekday: {
-            eastbound: ['6:00 AM'],
-            westbound: [],
-          },
-          weekend: {
-            eastbound: ['8:00 AM', '10:00 AM', '12:00 PM'],
-            westbound: [],
-          },
-        },
-      };
+    it('should return null for empty schedule', async () => {
+      mockFetch(createMockSchedule([]));
 
-      localStorage.setItem(
-        'lakeland-bus-route46-schedule',
-        JSON.stringify({
-          data: mockSchedule,
-          timestamp: Date.now(),
-        })
-      );
+      const testDate = new Date('2026-02-02T12:00:00Z');
+      const result = await findNextBus(testDate, 'eastbound');
 
-      // Test on Saturday at 9 AM
-      const testDate = new Date('2024-01-13T09:00:00'); // Saturday
+      expect(result).toBeNull();
+    });
+
+    it('should use weekend schedule on Saturday', async () => {
+      // Weekday has 6 AM bus, weekend has 8 AM bus
+      mockFetch(createMockSchedule(['06:00'], [], ['08:00', '10:00']));
+
+      // Saturday Feb 1, 2026 at 7:00 AM ET = 12:00 UTC
+      const testDate = new Date('2026-01-31T12:00:00Z'); // This is a Saturday
       const result = await findNextBus(testDate, 'eastbound');
 
       expect(result).toBeDefined();
-      expect(result?.departureTime).toBe('10:00 AM');
-      expect(result?.waitMinutes).toBe(60);
+      // Should get 8:00 AM (weekend schedule), not 6:00 AM (weekday)
+      const resultDate = new Date(result!.departureTime);
+      expect(resultDate.getUTCHours()).toBe(13); // 8 AM ET = 13:00 UTC
+    });
+
+    it('should use weekend schedule on Sunday', async () => {
+      mockFetch(createMockSchedule(['06:00'], [], ['09:00']));
+
+      // Sunday Feb 2, 2026 at 8:00 AM ET = 13:00 UTC
+      const testDate = new Date('2026-02-01T13:00:00Z'); // This is a Sunday
+      const result = await findNextBus(testDate, 'eastbound');
+
+      expect(result).toBeDefined();
+      const resultDate = new Date(result!.departureTime);
+      expect(resultDate.getUTCHours()).toBe(14); // 9 AM ET = 14:00 UTC
+    });
+
+    it('should handle westbound direction', async () => {
+      mockFetch(createMockSchedule([], ['17:00', '18:00']));
+
+      // 4:30 PM ET = 21:30 UTC (EST)
+      const testDate = new Date('2026-02-02T21:30:00Z');
+      const result = await findNextBus(testDate, 'westbound');
+
+      expect(result).toBeDefined();
+      // Should get 5:00 PM ET = 22:00 UTC
+      const resultDate = new Date(result!.departureTime);
+      expect(resultDate.getUTCHours()).toBe(22);
+    });
+
+    it('should handle noon correctly', async () => {
+      mockFetch(createMockSchedule(['11:00', '12:00', '13:00']));
+
+      // 11:30 AM ET = 16:30 UTC (EST)
+      const testDate = new Date('2026-02-02T16:30:00Z');
+      const result = await findNextBus(testDate, 'eastbound');
+
+      expect(result).toBeDefined();
+      // Should get 12:00 PM ET = 17:00 UTC
+      const resultDate = new Date(result!.departureTime);
+      expect(resultDate.getUTCHours()).toBe(17);
+    });
+
+    it('should handle early morning times correctly', async () => {
+      mockFetch(createMockSchedule(['04:50', '05:20', '05:50']));
+
+      // 4:00 AM ET = 09:00 UTC (EST)
+      const testDate = new Date('2026-02-02T09:00:00Z');
+      const result = await findNextBus(testDate, 'eastbound');
+
+      expect(result).toBeDefined();
+      // Should get 4:50 AM ET = 09:50 UTC
+      const resultDate = new Date(result!.departureTime);
+      expect(resultDate.getUTCHours()).toBe(9);
+      expect(resultDate.getUTCMinutes()).toBe(50);
+    });
+
+    it('should handle late evening times correctly', async () => {
+      mockFetch(createMockSchedule(['20:00', '21:00', '22:00']));
+
+      // 8:30 PM ET = 01:30 UTC next day (EST)
+      const testDate = new Date('2026-02-03T01:30:00Z');
+      const result = await findNextBus(testDate, 'eastbound');
+
+      expect(result).toBeDefined();
+      // Should get 9:00 PM ET = 02:00 UTC
+      const resultDate = new Date(result!.departureTime);
+      expect(resultDate.getUTCHours()).toBe(2);
     });
   });
+});
 
-  describe('HTML parsing edge cases', () => {
-    it('should handle extra whitespace in stop names', async () => {
-      const htmlWithWhitespace = `
-        <div class="schedule-detail-popup">
-          <table>
-            <tr class="stop-schedule">
-              <td class="wg-col-name">
-                <div class="s-name">
-                  Parsippany (Waterview P&R)
-                </div>
-              </td>
-              <td><div class="s-time"><span>5:00</span></div></td>
-            </tr>
-          </table>
-        </div>
-      `;
+/**
+ * Test the scheduleTimeToUTC function directly
+ * This is the core timezone conversion that was broken before
+ */
+describe('scheduleTimeToUTC (via findNextBus behavior)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
-      global.fetch = vi.fn(() =>
-        Promise.resolve({
-          ok: true,
-          text: async () => htmlWithWhitespace,
-        } as Response)
-      );
+  // These tests verify the UTC conversion is correct by checking findNextBus output
+  // Since scheduleTimeToUTC is not exported, we test it through findNextBus
 
-      const schedule = await fetchSchedule();
+  it('should convert morning time to correct UTC (EST, UTC-5)', async () => {
+    const mockSchedule = {
+      timestamp: Date.now(),
+      schedules: {
+        weekday: { eastbound: ['09:20'], westbound: [] },
+        weekend: { eastbound: [], westbound: [] },
+      },
+    };
 
-      // Should still find the stop and parse times
-      expect(schedule.schedules.weekday.eastbound.length).toBeGreaterThan(0);
-    });
+    global.fetch = vi.fn(() =>
+      Promise.resolve({ ok: true, json: async () => mockSchedule } as Response)
+    );
 
-    it('should skip times with dashes or special characters', async () => {
-      const htmlWithDashes = `
-        <div class="schedule-detail-popup">
-          <table>
-            <tr class="stop-schedule">
-              <td class="wg-col-name">
-                <div class="s-name">Parsippany (Waterview P&R)</div>
-              </td>
-              <td><div class="s-time"><span>5:00</span></div></td>
-              <td><div class="s-time"><span>-</span></div></td>
-              <td><div class="s-time"><span>6:00</span></div></td>
-            </tr>
-          </table>
-        </div>
-      `;
+    // Request bus after 9:00 AM ET
+    // 9:00 AM ET in EST = 14:00 UTC
+    const testDate = new Date('2026-02-02T14:00:00Z');
+    const result = await findNextBus(testDate, 'eastbound');
 
-      global.fetch = vi.fn(() =>
-        Promise.resolve({
-          ok: true,
-          text: async () => htmlWithDashes,
-        } as Response)
-      );
+    expect(result).toBeDefined();
+    // 9:20 AM ET = 14:20 UTC (EST is UTC-5)
+    const resultDate = new Date(result!.departureTime);
+    expect(resultDate.toISOString()).toBe('2026-02-02T14:20:00.000Z');
+  });
 
-      const schedule = await fetchSchedule();
+  it('should handle times that cross into next UTC day', async () => {
+    const mockSchedule = {
+      timestamp: Date.now(),
+      schedules: {
+        weekday: { eastbound: ['21:20'], westbound: [] },
+        weekend: { eastbound: [], westbound: [] },
+      },
+    };
 
-      // Should parse 2 times (skipping the dash)
-      expect(schedule.schedules.weekday.eastbound.length).toBe(2);
-      expect(schedule.schedules.weekday.eastbound).not.toContain('-');
-    });
+    global.fetch = vi.fn(() =>
+      Promise.resolve({ ok: true, json: async () => mockSchedule } as Response)
+    );
+
+    // Request bus after 9:00 PM ET
+    // 9:00 PM ET in EST = 02:00 UTC next day
+    const testDate = new Date('2026-02-03T02:00:00Z');
+    const result = await findNextBus(testDate, 'eastbound');
+
+    expect(result).toBeDefined();
+    // 9:20 PM ET = 02:20 UTC next day
+    const resultDate = new Date(result!.departureTime);
+    expect(resultDate.getUTCHours()).toBe(2);
+    expect(resultDate.getUTCMinutes()).toBe(20);
   });
 });

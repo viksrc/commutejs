@@ -45,14 +45,33 @@ function parseScheduleHTML(html: string, stopName: string): string[] {
     return [];
 }
 
-function addAmPm(times: string[], direction: 'eastbound' | 'westbound', isWeekend: boolean): string[] {
-    return times.map(time => {
-        const hour = parseInt(time.split(':')[0], 10);
-        let isAM = false;
-        if (direction === 'eastbound') isAM = isWeekend ? (hour >= 7 && hour < 12) : (hour >= 4 && hour <= 12);
-        else isAM = isWeekend ? (hour === 9 || hour === 11) : (hour >= 7 && hour < 12);
-        return `${time} ${isAM ? 'AM' : 'PM'}`;
-    });
+/**
+ * Convert 12-hour time (without AM/PM) to 24-hour "HH:MM" format
+ * Uses schedule context to determine AM/PM
+ */
+function to24Hour(time: string, direction: 'eastbound' | 'westbound', isWeekend: boolean): string {
+    const [hourStr, minute] = time.split(':');
+    let hour = parseInt(hourStr, 10);
+
+    // Determine if this hour is AM or PM based on schedule context
+    // Schedule times are in 12-hour format without AM/PM markers
+    let isAM: boolean;
+    if (direction === 'eastbound') {
+        // Eastbound: early morning departures (4-11 AM), then noon onwards
+        isAM = isWeekend ? (hour >= 7 && hour <= 11) : (hour >= 4 && hour <= 11);
+    } else {
+        // Westbound: morning departures (7-11 AM), then afternoon/evening
+        isAM = isWeekend ? (hour >= 9 && hour <= 11) : (hour >= 7 && hour <= 11);
+    }
+
+    // Convert to 24-hour format
+    if (!isAM && hour !== 12) {
+        hour += 12;
+    }
+    // hour 12 PM stays as 12 (noon)
+    // No midnight (12 AM) buses in the schedule
+
+    return `${hour.toString().padStart(2, '0')}:${minute}`;
 }
 
 export async function getSchedule(): Promise<CachedScheduleData> {
@@ -78,10 +97,10 @@ export async function getSchedule(): Promise<CachedScheduleData> {
         fetchHTML(SCHEDULE_IDS.weekendWestbound),
     ]);
 
-    const weekdayEastbound = addAmPm(parseScheduleHTML(weekdayEastHTML, 'Parsippany (Waterview P&R)'), 'eastbound', false);
-    const weekdayWestbound = addAmPm(parseScheduleHTML(weekdayWestHTML, 'NY PABT'), 'westbound', false);
-    const weekendEastbound = addAmPm(parseScheduleHTML(weekendEastHTML, 'Parsippany (Waterview P&R)'), 'eastbound', true);
-    const weekendWestbound = addAmPm(parseScheduleHTML(weekendWestHTML, 'Depart New York PABT'), 'westbound', true);
+    const weekdayEastbound = parseScheduleHTML(weekdayEastHTML, 'Parsippany (Waterview P&R)').map(t => to24Hour(t, 'eastbound', false));
+    const weekdayWestbound = parseScheduleHTML(weekdayWestHTML, 'NY PABT').map(t => to24Hour(t, 'westbound', false));
+    const weekendEastbound = parseScheduleHTML(weekendEastHTML, 'Parsippany (Waterview P&R)').map(t => to24Hour(t, 'eastbound', true));
+    const weekendWestbound = parseScheduleHTML(weekendWestHTML, 'Depart New York PABT').map(t => to24Hour(t, 'westbound', true));
 
     console.log(`[getSchedule] Parsed schedules - weekday eastbound: ${weekdayEastbound.length}, westbound: ${weekdayWestbound.length}`);
     console.log(`[getSchedule] Parsed schedules - weekend eastbound: ${weekendEastbound.length}, westbound: ${weekendWestbound.length}`);

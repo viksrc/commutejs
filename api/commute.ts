@@ -2,7 +2,6 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getSchedule } from './services/lakelandBus.js';
 
 // ============ TYPES ============
-// All times in API are ISO 8601 UTC strings (e.g., "2026-02-02T14:30:00.000Z")
 interface CommuteSegment {
     mode: 'drive' | 'walk' | 'train' | 'path' | 'bus';
     from: string;
@@ -10,19 +9,18 @@ interface CommuteSegment {
     fromLabel?: string;
     toLabel?: string;
     duration: string;
-    durationSeconds: number;
     distance?: string;
-    trafficDelayMins?: number;  // Delay in minutes vs no-traffic duration
-    departureTime?: string;  // ISO 8601 UTC
-    arrivalTime?: string;    // ISO 8601 UTC
+    traffic?: string;
+    departureTime?: string;
+    arrivalTime?: string;
     error?: string;
 }
 
 interface RouteOption {
     name: string;
-    totalDurationSeconds?: number;
-    startTime?: string;      // ISO 8601 UTC - when to leave
-    eta?: string;            // ISO 8601 UTC - arrival time
+    totalTime?: string;
+    eta?: string;
+    leaveInMins?: number | null;
     isBest?: boolean;
     hasError?: boolean;
     segments: CommuteSegment[];
@@ -30,8 +28,7 @@ interface RouteOption {
 
 interface CommuteResponse {
     direction: 'toOffice' | 'toHome';
-    asOf: string;            // ISO 8601 UTC - the reference time used for calculations
-    lastUpdated: string;     // ISO 8601 UTC
+    lastUpdated: string;
     routes: RouteOption[];
 }
 
@@ -193,10 +190,9 @@ async function fetchDrivingDirections(origin: string, destination: string): Prom
         return {
             from: origin,
             to: destination,
-            duration: formatDuration(durationSeconds),
-            durationSeconds,
+            duration: formatDuration(Math.round(durationSeconds / 60)),
             distance: `${distanceMiles} mi`,
-            trafficDelayMins: getTrafficDelayMins(staticDurationSeconds, durationSeconds),
+            traffic: getTrafficStatus(staticDurationSeconds, durationSeconds),
         };
     } catch (error) {
         console.error('Error fetching driving directions:', error);
@@ -217,7 +213,6 @@ async function fetchTransitDirections(origin: string, destination: string, depar
         units: 'IMPERIAL',
     };
 
-    // Google API expects ISO 8601 UTC
     if (departureTime) requestBody.departureTime = departureTime.toISOString();
 
     try {
@@ -238,8 +233,14 @@ async function fetchTransitDirections(origin: string, destination: string, depar
 
         if (!data.routes || data.routes.length === 0) return null;
 
-        // Sort routes by duration and pick the fastest
+        // Sort routes by arrival time (earliest arrival first)
         const sortedRoutes = data.routes.sort((a: any, b: any) => {
+            const aArrival = new Date(a.legs?.[0]?.steps?.[a.legs[0].steps.length - 1]?.transitDetails?.stopDetails?.arrivalTime || 0).getTime();
+            const bArrival = new Date(b.legs?.[0]?.steps?.[b.legs[0].steps.length - 1]?.transitDetails?.stopDetails?.arrivalTime || 0).getTime();
+
+            // If arrival times are missing or equal, fall back to duration
+            if (aArrival !== bArrival) return aArrival - bArrival;
+
             const aDuration = parseInt(a.duration.replace('s', ''));
             const bDuration = parseInt(b.duration.replace('s', ''));
             return aDuration - bDuration;
@@ -254,27 +255,34 @@ async function fetchTransitDirections(origin: string, destination: string, depar
             step.transitDetails?.transitLine?.nameShort === 'PATH' || step.transitDetails?.transitLine?.name?.includes('PATH')
         );
 
-        // Extract departure/arrival times as ISO 8601 UTC strings
-        let departureTimeISO: string | undefined;
-        let arrivalTimeISO: string | undefined;
+        let departureTimeStr, arrivalTimeStr;
+        let departureDate, arrivalDate;
         const transitSteps = leg?.steps?.filter((step: any) => step.transitDetails);
         if (transitSteps && transitSteps.length > 0) {
             const first = transitSteps[0].transitDetails?.stopDetails?.departureTime;
             const last = transitSteps[transitSteps.length - 1].transitDetails?.stopDetails?.arrivalTime;
-            // Google returns ISO 8601 strings - keep them as-is
-            if (first) departureTimeISO = new Date(first).toISOString();
-            if (last) arrivalTimeISO = new Date(last).toISOString();
+            if (first) {
+                departureDate = new Date(first);
+                departureTimeStr = formatTimeToAMPM(departureDate);
+            }
+            if (last) {
+                arrivalDate = new Date(last);
+                arrivalTimeStr = formatTimeToAMPM(arrivalDate);
+            }
         }
 
         return {
             from: origin,
             to: destination,
-            duration: formatDuration(durationSeconds),
-            durationSeconds,
+            duration: formatDuration(Math.round(durationSeconds / 60)),
             distance: hasPath ? 'PATH + walk' : `${(route.distanceMeters * 0.000621371).toFixed(1)} mi`,
-            trafficDelayMins: delayMinutes,
-            departureTime: departureTimeISO,
-            arrivalTime: arrivalTimeISO,
+            traffic: delayMinutes > 2 ? `Delays (+${delayMinutes} min)` : 'On time',
+            departureTime: departureTimeStr,
+            arrivalTime: arrivalTimeStr,
+            // @ts-ignore - internal use
+            departureDate,
+            // @ts-ignore - internal use
+            arrivalDate
         };
     } catch (error) {
         console.error('Error fetching transit directions:', error);
@@ -282,192 +290,144 @@ async function fetchTransitDirections(origin: string, destination: string, depar
     }
 }
 
-function getTrafficDelayMins(staticDuration: number, actualDuration: number): number {
-    return Math.round((actualDuration - staticDuration) / 60);
+function getTrafficStatus(staticDuration: number, actualDuration: number): string {
+    const delayPercentage = ((actualDuration - staticDuration) / staticDuration) * 100;
+    if (delayPercentage < 5) return 'Light traffic';
+    else if (delayPercentage < 15) return 'Moderate traffic';
+    else if (delayPercentage < 30) return 'Heavy traffic';
+    return `Severe delays (+${Math.round((actualDuration - staticDuration) / 60)} min)`;
 }
 
 // ============ HELPERS ============
-
-/**
- * Parse duration string (e.g., "1h 30m", "45m") to seconds
- */
-function parseDurationToSeconds(duration: string): number {
+function parseDurationToMinutes(duration: string): number {
     const h = duration.match(/(\d+)h/);
     const m = duration.match(/(\d+)m/);
-    return ((h ? parseInt(h[1]) * 60 : 0) + (m ? parseInt(m[1]) : 0)) * 60;
+    return (h ? parseInt(h[1]) * 60 : 0) + (m ? parseInt(m[1]) : 0);
 }
 
-/**
- * Format seconds to human-readable duration string
- */
-function formatDuration(seconds: number): string {
-    const totalMinutes = Math.round(seconds / 60);
-    const h = Math.floor(totalMinutes / 60);
-    const m = totalMinutes % 60;
-    return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
-
-/**
- * Get the current UTC offset for America/New_York timezone on a given date.
- * Returns offset in minutes (e.g., -300 for EST, -240 for EDT)
- */
-function getNYOffsetMinutes(date: Date): number {
-    // Create a formatter that gives us the timezone offset
-    const formatter = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/New_York',
-        timeZoneName: 'shortOffset'
-    });
-    const parts = formatter.formatToParts(date);
-    const offsetPart = parts.find(p => p.type === 'timeZoneName')?.value || '-05:00';
-
-    // Parse offset like "GMT-5" or "GMT-4"
-    const match = offsetPart.match(/GMT([+-])(\d+)/);
-    if (match) {
-        const sign = match[1] === '-' ? -1 : 1;
-        const hours = parseInt(match[2]);
-        return sign * hours * 60;
-    }
-    return -300; // Default to EST (-5 hours)
-}
-
-/**
- * Convert a NY local time string (e.g., "4:29 AM") to a UTC Date object.
- * Uses the reference date to determine the correct date and DST offset.
- */
-function nyTimeStringToUTC(timeStr: string, referenceDate: Date): Date | null {
+function parseTimeToDate(timeStr: string): Date | null {
     const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
     if (!match) return null;
-
     let hours = parseInt(match[1], 10);
     const minutes = parseInt(match[2], 10);
     const period = match[3].toUpperCase();
-
     if (period === 'PM' && hours !== 12) hours += 12;
     else if (period === 'AM' && hours === 12) hours = 0;
 
-    // Get the NY date components for the reference date
-    const nyFormatter = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/New_York',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-    });
-    const parts = nyFormatter.formatToParts(referenceDate);
-    const year = parseInt(parts.find(p => p.type === 'year')!.value);
-    const month = parseInt(parts.find(p => p.type === 'month')!.value) - 1; // JS months are 0-indexed
-    const day = parseInt(parts.find(p => p.type === 'day')!.value);
+    const now = new Date();
+    const nyStr = now.toLocaleString('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' });
+    const [month, day, year] = nyStr.split('/');
 
-    // Get the NY offset for this date
-    const offsetMinutes = getNYOffsetMinutes(referenceDate);
+    // Create a date as if it were local time (UTC on Vercel)
+    const date = new Date(`${year}-${month}-${day}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`);
 
-    // Create the UTC timestamp:
-    // If it's 4:29 AM in NY and NY is UTC-5, then UTC time is 4:29 + 5:00 = 9:29 AM
-    const nyTimeMs = Date.UTC(year, month, day, hours, minutes, 0);
-    const utcMs = nyTimeMs - (offsetMinutes * 60 * 1000);
+    // Adjust for the difference between "local" and "America/New_York"
+    const nyDate = new Date(date.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const diff = date.getTime() - nyDate.getTime();
+    return new Date(date.getTime() + diff);
+}
 
-    return new Date(utcMs);
+function calculateArrivalTime(departureTime: string, duration: string): string | null {
+    const depDate = parseTimeToDate(departureTime);
+    if (!depDate) return null;
+    return formatTimeToAMPM(new Date(depDate.getTime() + parseDurationToMinutes(duration) * 60000));
+}
+
+function formatTimeToAMPM(date: Date): string {
+    return date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: 'America/New_York'
+    }).replace(/^0/, '');
+}
+
+function formatDuration(minutes: number): string {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function parseTimeMinutes(timeStr: string): number {
+    const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+    if (!match) return 0;
+    let hour = parseInt(match[1]);
+    const minute = parseInt(match[2]);
+    const ap = match[3].toUpperCase();
+    if (ap === 'PM' && hour !== 12) hour += 12;
+    if (ap === 'AM' && hour === 12) hour = 0;
+    return hour * 60 + minute;
 }
 
 /**
- * Get NY time components (hour, minute, dayOfWeek) from a UTC Date
+ * Convert schedule time (HH:MM in NY timezone) to UTC Date for today
  */
-function getTimeInNY(utcDate: Date): { hours: number; minutes: number; dayOfWeek: number } {
-    const formatter = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/New_York',
-        hour: 'numeric',
-        minute: 'numeric',
-        weekday: 'short',
-        hour12: false
-    });
-    const parts = formatter.formatToParts(utcDate);
+function scheduleTimeToUTC(scheduleTime: string): Date {
+    const [hours, minutes] = scheduleTime.split(':').map(Number);
 
-    const hourPart = parts.find(p => p.type === 'hour');
-    const minutePart = parts.find(p => p.type === 'minute');
-    const weekdayPart = parts.find(p => p.type === 'weekday');
+    // Get today's date in NY timezone
+    const now = new Date();
+    const nyDateStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    const [year, month, day] = nyDateStr.split('-').map(Number);
 
-    const hours = parseInt(hourPart?.value || '0');
-    const minutes = parseInt(minutePart?.value || '0');
+    // NY is UTC-5 (EST) or UTC-4 (EDT). Try both offsets to find the correct one.
+    for (const offsetHours of [5, 4]) {
+        const candidate = new Date(Date.UTC(year, month - 1, day, hours + offsetHours, minutes, 0, 0));
 
-    // Convert weekday name to number (0 = Sunday)
-    const weekdayMap: Record<string, number> = { 'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6 };
-    const dayOfWeek = weekdayMap[weekdayPart?.value || 'Mon'] ?? 1;
+        // Verify this gives us the right NY time
+        const nyTime = candidate.toLocaleString('en-US', {
+            timeZone: 'America/New_York',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        });
+        const [nyH, nyM] = nyTime.split(':').map(Number);
 
-    return { hours, minutes, dayOfWeek };
-}
-
-/**
- * Find the next bus departure after the given UTC arrival time.
- * Lakeland bus schedules are in NY local time, so we convert to NY to compare,
- * then return the bus departure as a UTC timestamp.
- */
-async function findNextBus(arrivalTimeUTC: Date, direction: 'eastbound' | 'westbound'): Promise<{ departureTimeUTC: Date; waitSeconds: number } | null> {
-    const schedule = await getSchedule();
-
-    // Get NY time components for the arrival time
-    const nyTime = getTimeInNY(arrivalTimeUTC);
-    const type = (nyTime.dayOfWeek === 0 || nyTime.dayOfWeek === 6) ? 'weekend' : 'weekday';
-    const times = schedule.schedules[type][direction];
-
-    console.log(`[findNextBus] direction=${direction}, type=${type}, arrivalTimeUTC=${arrivalTimeUTC.toISOString()}`);
-    console.log(`[findNextBus] nyTime: hours=${nyTime.hours}, minutes=${nyTime.minutes}, dayOfWeek=${nyTime.dayOfWeek}`);
-    console.log(`[findNextBus] schedule times count: ${times?.length || 0}`);
-    if (times?.length > 0) {
-        console.log(`[findNextBus] first few times: ${times.slice(0, 3).join(', ')}`);
-    }
-
-    if (!times || times.length === 0) {
-        console.log(`[findNextBus] No times available for ${type} ${direction}`);
-        return null;
-    }
-
-    const arrivalMinutesInNY = nyTime.hours * 60 + nyTime.minutes;
-    console.log(`[findNextBus] arrivalMinutesInNY=${arrivalMinutesInNY} (${Math.floor(arrivalMinutesInNY/60)}:${arrivalMinutesInNY%60})`);
-
-    // Find the next bus (times are like "4:50 AM", "5:20 AM", etc.)
-    for (const timeStr of times) {
-        const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-        if (!match) continue;
-
-        let hour = parseInt(match[1]);
-        const minute = parseInt(match[2]);
-        const period = match[3].toUpperCase();
-        if (period === 'PM' && hour !== 12) hour += 12;
-        if (period === 'AM' && hour === 12) hour = 0;
-
-        const busMinutesInNY = hour * 60 + minute;
-
-        if (busMinutesInNY >= arrivalMinutesInNY) {
-            // Convert this NY time to UTC
-            const departureTimeUTC = nyTimeStringToUTC(timeStr, arrivalTimeUTC);
-            if (departureTimeUTC) {
-                const waitSeconds = (departureTimeUTC.getTime() - arrivalTimeUTC.getTime()) / 1000;
-                console.log(`[findNextBus] Found bus: ${timeStr} -> ${departureTimeUTC.toISOString()}, wait=${waitSeconds}s`);
-                return { departureTimeUTC, waitSeconds };
-            }
+        if (nyH === hours && nyM === minutes) {
+            return candidate;
         }
     }
 
-    console.log(`[findNextBus] No buses found after ${arrivalMinutesInNY} minutes in NY time`);
-    return null; // No more buses today
+    // Fallback to EST (UTC-5)
+    return new Date(Date.UTC(year, month - 1, day, hours + 5, minutes, 0, 0));
+}
+
+/**
+ * Find the next bus departure after arrivalTimeUTC
+ * Schedule times are stored as "HH:MM" (24-hour) in NY timezone
+ * Returns ISO 8601 UTC string
+ */
+async function findNextBus(arrivalTimeUTC: Date, direction: 'eastbound' | 'westbound'): Promise<{ departureTime: string } | null> {
+    const schedule = await getSchedule();
+
+    // Determine day type based on NY time
+    const nyDayStr = arrivalTimeUTC.toLocaleDateString('en-US', {
+        timeZone: 'America/New_York',
+        weekday: 'short'
+    });
+    const isWeekend = nyDayStr === 'Sat' || nyDayStr === 'Sun';
+    const type = isWeekend ? 'weekend' : 'weekday';
+
+    const times = schedule.schedules[type][direction];
+    if (!times || times.length === 0) return null;
+
+    // Find the first bus that departs after arrivalTimeUTC
+    for (const timeStr of times) {
+        const busTimeUTC = scheduleTimeToUTC(timeStr);
+        if (busTimeUTC >= arrivalTimeUTC) {
+            return { departureTime: busTimeUTC.toISOString() };
+        }
+    }
+
+    return null;
 }
 
 // ============ HANDLER ============
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-    const { direction, asOf } = req.query;
+    const { direction } = req.query;
 
     if (direction !== 'toOffice' && direction !== 'toHome') {
         return res.status(400).json({ error: 'Invalid direction. Use toOffice or toHome.' });
-    }
-
-    // Parse asOf parameter (ISO 8601 UTC) or default to current UTC time
-    let asOfDate: Date;
-    if (typeof asOf === 'string' && asOf) {
-        asOfDate = new Date(asOf);
-        if (isNaN(asOfDate.getTime())) {
-            return res.status(400).json({ error: 'Invalid asOf parameter. Use ISO 8601 format (e.g., 2026-02-02T14:30:00.000Z).' });
-        }
-    } else {
-        asOfDate = new Date(); // Current UTC time
     }
 
     try {
@@ -475,131 +435,129 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const routes: RouteOption[] = [];
 
         for (const routeConfig of routesConfig) {
+            let skipRoute = false;
+
             // === PASS 1: Collect all segments with durations (times not yet set) ===
             interface SegmentData {
-                segment: CommuteSegment;
-                fixedDepartureTimeUTC?: Date; // For transit/bus segments with schedules
+                segment: Omit<CommuteSegment, 'departureTime' | 'arrivalTime'> & { departureTime?: string; arrivalTime?: string; error?: string; departureDate?: Date; arrivalDate?: Date };
+                fixedDepartureTime?: Date; // For transit/bus segments with schedules
                 hasError?: boolean;
             }
             const segmentData: SegmentData[] = [];
-            let estimatedSecondsFromStart = 0; // Running total in seconds
+            let currentCommuteTime = new Date(); // Running absolute time
             let routeHasError = false;
 
             for (const segConfig of routeConfig.segments) {
-                let segment: Partial<CommuteSegment> | null = null;
-                let fixedDepartureTimeUTC: Date | undefined;
+                if (skipRoute) break;
+                let segment: (Partial<CommuteSegment> & { departureDate?: Date; arrivalDate?: Date }) | null = null;
+                let fixedDepartureTime: Date | undefined;
                 let segmentHasError = false;
-
-                // Estimate arrival time at this segment (UTC) for transit lookups
-                const estimatedArrivalAtSegmentUTC = new Date(asOfDate.getTime() + estimatedSecondsFromStart * 1000);
 
                 if (segConfig.type === 'drive') {
                     const driveRes = await fetchDrivingDirections(LOCATIONS[segConfig.from].address, LOCATIONS[segConfig.to].address);
                     if (driveRes) {
                         segment = { ...driveRes, mode: 'drive', from: segConfig.fromLabel, to: segConfig.toLabel };
                     } else {
-                        segment = { mode: 'drive', from: segConfig.fromLabel, to: segConfig.toLabel, duration: '-', durationSeconds: 0, error: 'Google API error' };
+                        segment = { mode: 'drive', from: segConfig.fromLabel, to: segConfig.toLabel, duration: '-', error: 'Google API error' };
                         segmentHasError = true;
                         routeHasError = true;
                     }
                 } else if (segConfig.type === 'walk') {
-                    const walkDurationSeconds = parseDurationToSeconds(segConfig.duration);
-                    segment = {
-                        mode: 'walk',
-                        from: segConfig.fromLabel,
-                        to: segConfig.toLabel,
-                        duration: segConfig.duration,
-                        durationSeconds: walkDurationSeconds,
-                        distance: '-'
-                    };
+                    segment = { mode: 'walk', from: segConfig.fromLabel, to: segConfig.toLabel, duration: segConfig.duration, distance: '-', traffic: 'Walk' };
                 } else if (segConfig.type === 'transit') {
-                    // Pass the estimated arrival time (UTC) so Google returns the correct route
+                    // Query Google with the arrival time at this point
                     const transitRes = await fetchTransitDirections(
                         LOCATIONS[segConfig.from].address,
                         LOCATIONS[segConfig.to].address,
-                        estimatedArrivalAtSegmentUTC
+                        currentCommuteTime
                     );
                     if (transitRes) {
                         segment = { ...transitRes, mode: segConfig.mode, from: segConfig.fromLabel, to: segConfig.toLabel };
-                        // departureTime from Google is already ISO 8601 UTC
+                        // Parse the fixed departure time from transit schedule
                         if (transitRes.departureTime) {
-                            fixedDepartureTimeUTC = new Date(transitRes.departureTime);
+                            fixedDepartureTime = parseTimeToDate(transitRes.departureTime) || undefined;
                         }
                     } else {
-                        segment = { mode: segConfig.mode, from: segConfig.fromLabel, to: segConfig.toLabel, duration: '-', durationSeconds: 0, error: 'Google API error' };
+                        segment = { mode: segConfig.mode, from: segConfig.fromLabel, to: segConfig.toLabel, duration: '-', error: 'Google API error' };
                         segmentHasError = true;
                         routeHasError = true;
                     }
                 } else if (segConfig.type === 'bus') {
-                    const nextBus = await findNextBus(estimatedArrivalAtSegmentUTC, segConfig.direction);
+                    const nextBus = await findNextBus(currentCommuteTime, segConfig.direction);
                     if (nextBus) {
                         const driveRes = await fetchDrivingDirections(LOCATIONS[segConfig.from].address, LOCATIONS[segConfig.to].address);
-                        const busDurationSeconds = driveRes?.durationSeconds || 2700; // 45 min default
                         const busDuration = driveRes?.duration || '45m';
-                        const arrivalTimeUTC = new Date(nextBus.departureTimeUTC.getTime() + busDurationSeconds * 1000);
-
+                        // nextBus.departureTime is now ISO 8601 UTC string
+                        const busDepDate = new Date(nextBus.departureTime);
+                        const busDepDisplay = formatTimeToAMPM(busDepDate);
+                        const busArrDate = new Date(busDepDate.getTime() + parseDurationToMinutes(busDuration) * 60000);
+                        const busArrDisplay = formatTimeToAMPM(busArrDate);
                         segment = {
-                            mode: 'bus',
-                            from: segConfig.fromLabel,
-                            to: segConfig.toLabel,
-                            duration: busDuration,
-                            durationSeconds: busDurationSeconds,
-                            distance: driveRes?.distance || '30 mi',
-                            departureTime: nextBus.departureTimeUTC.toISOString(),
-                            arrivalTime: arrivalTimeUTC.toISOString()
+                            mode: 'bus', from: segConfig.fromLabel, to: segConfig.toLabel, duration: busDuration,
+                            distance: driveRes?.distance || '30 mi', traffic: `Departs ${busDepDisplay}`,
+                            departureTime: busDepDisplay, arrivalTime: busArrDisplay
                         };
-                        fixedDepartureTimeUTC = nextBus.departureTimeUTC;
+                        fixedDepartureTime = busDepDate;
                     } else {
-                        segment = { mode: 'bus', from: segConfig.fromLabel, to: segConfig.toLabel, duration: '-', durationSeconds: 0, error: 'No buses available' };
+                        segment = { mode: 'bus', from: segConfig.fromLabel, to: segConfig.toLabel, duration: '-', error: 'Lakeland API error' };
                         segmentHasError = true;
                         routeHasError = true;
                     }
                 }
 
                 if (segment) {
-                    segmentData.push({ segment: segment as CommuteSegment, fixedDepartureTimeUTC, hasError: segmentHasError });
-                    if (!segmentHasError && segment.durationSeconds) {
-                        estimatedSecondsFromStart += segment.durationSeconds;
+                    segmentData.push({ segment: segment as CommuteSegment, fixedDepartureTime, hasError: segmentHasError });
+                    if (!segmentHasError && segment.duration && segment.duration !== '-') {
+                        // Update absolute currentCommuteTime
+                        if (segment.arrivalDate) {
+                            currentCommuteTime = segment.arrivalDate;
+                        } else if (fixedDepartureTime) {
+                            const durationMins = parseDurationToMinutes(segment.duration);
+                            currentCommuteTime = new Date(fixedDepartureTime.getTime() + durationMins * 60000);
+                        } else {
+                            const durationMins = parseDurationToMinutes(segment.duration);
+                            currentCommuteTime = new Date(currentCommuteTime.getTime() + durationMins * 60000);
+                        }
                     }
                 }
             }
 
-            if (segmentData.length === 0) continue;
+            if (skipRoute || segmentData.length === 0) continue;
 
             // === PASS 2: Find first fixed transit time and calculate backwards ===
             let firstFixedTransitIndex = -1;
-            let firstFixedTransitTimeUTC: Date | null = null;
+            let firstFixedTransitTime: Date | null = null;
 
             for (let i = 0; i < segmentData.length; i++) {
-                if (segmentData[i].fixedDepartureTimeUTC) {
+                if (segmentData[i].fixedDepartureTime) {
                     firstFixedTransitIndex = i;
-                    firstFixedTransitTimeUTC = segmentData[i].fixedDepartureTimeUTC!;
+                    firstFixedTransitTime = segmentData[i].fixedDepartureTime!;
                     break;
                 }
             }
 
             // Calculate the ideal start time by working backwards from the first transit
-            let idealStartTimeUTC: Date;
-            if (firstFixedTransitTimeUTC && firstFixedTransitIndex > 0) {
+            let idealStartTime: Date;
+            if (firstFixedTransitTime && firstFixedTransitIndex > 0) {
                 // Sum up durations of all segments BEFORE the first transit
-                let secondsToReachTransit = 0;
+                let timeToReachTransit = 0;
                 for (let i = 0; i < firstFixedTransitIndex; i++) {
-                    secondsToReachTransit += segmentData[i].segment.durationSeconds || 0;
+                    timeToReachTransit += parseDurationToMinutes(segmentData[i].segment.duration);
                 }
                 // Start time = transit departure - time to reach it
-                idealStartTimeUTC = new Date(firstFixedTransitTimeUTC.getTime() - secondsToReachTransit * 1000);
+                idealStartTime = new Date(firstFixedTransitTime.getTime() - timeToReachTransit * 60000);
             } else {
-                // No fixed transit, just start at asOf time
-                idealStartTimeUTC = asOfDate;
+                // No fixed transit, just start now
+                idealStartTime = new Date();
             }
 
-            // === PASS 3: Assign times to all segments starting from idealStartTimeUTC ===
+            // === PASS 3: Assign times to all segments starting from idealStartTime ===
             const segments: CommuteSegment[] = [];
-            let currentTimeUTC = idealStartTimeUTC;
+            let currentTime = idealStartTime;
 
             for (let i = 0; i < segmentData.length; i++) {
                 const sd = segmentData[i];
-                const segment = { ...sd.segment };
+                const segment = { ...sd.segment } as CommuteSegment;
 
                 // Skip time assignment for error segments
                 if (sd.hasError) {
@@ -610,43 +568,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 }
 
                 // Check if this segment has a fixed scheduled departure (transit/bus)
-                if (sd.fixedDepartureTimeUTC && sd.fixedDepartureTimeUTC > currentTimeUTC) {
+                if (sd.fixedDepartureTime && sd.fixedDepartureTime > currentTime) {
                     // There's a wait - the transit doesn't leave until the scheduled time
-                    currentTimeUTC = sd.fixedDepartureTimeUTC;
+                    currentTime = sd.fixedDepartureTime;
                 }
 
-                // Set departure time as ISO 8601 UTC
-                segment.departureTime = currentTimeUTC.toISOString();
+                // Set departure time
+                segment.departureTime = formatTimeToAMPM(currentTime);
 
                 // Calculate arrival time
-                const durationSeconds = segment.durationSeconds || 0;
-                const arrivalDateUTC = new Date(currentTimeUTC.getTime() + durationSeconds * 1000);
-                segment.arrivalTime = arrivalDateUTC.toISOString();
+                const durationMins = parseDurationToMinutes(segment.duration);
+                const arrivalDate = new Date(currentTime.getTime() + durationMins * 60000);
+                segment.arrivalTime = formatTimeToAMPM(arrivalDate);
 
                 // Advance current time to arrival
-                currentTimeUTC = arrivalDateUTC;
+                currentTime = arrivalDate;
 
                 segments.push(segment);
             }
 
             if (segments.length > 0) {
                 if (routeHasError) {
-                    // Route has errors - don't show total time or eta
+                    // Route has errors - don't show totalTime or eta
                     routes.push({ name: routeConfig.name, segments, hasError: true, isBest: false });
                 } else {
-                    // Calculate total duration in seconds
-                    const startTimeUTC = new Date(segments[0].departureTime!);
-                    const endTimeUTC = new Date(segments[segments.length - 1].arrivalTime!);
-                    const totalDurationSeconds = Math.round((endTimeUTC.getTime() - startTimeUTC.getTime()) / 1000);
-
-                    routes.push({
-                        name: routeConfig.name,
-                        segments,
-                        totalDurationSeconds,
-                        startTime: segments[0].departureTime,
-                        eta: segments[segments.length - 1].arrivalTime,
-                        isBest: false
-                    });
+                    let totalMinutes = 0;
+                    if (segments[0].departureTime && segments[segments.length - 1].arrivalTime) {
+                        totalMinutes = parseTimeMinutes(segments[segments.length - 1].arrivalTime!) - parseTimeMinutes(segments[0].departureTime);
+                        if (totalMinutes < 0) totalMinutes += 1440; // OBJECTIVELY NECESSARY FIX
+                    }
+                    routes.push({ name: routeConfig.name, segments, totalTime: formatDuration(totalMinutes), eta: segments[segments.length - 1].arrivalTime || 'Unknown', isBest: false });
                 }
             }
         }
@@ -656,18 +607,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             if (a.hasError && !b.hasError) return 1;
             if (!a.hasError && b.hasError) return -1;
             if (a.hasError && b.hasError) return 0;
-            return (a.totalDurationSeconds || 0) - (b.totalDurationSeconds || 0);
+            return parseDurationToMinutes(a.totalTime || '0m') - parseDurationToMinutes(b.totalTime || '0m');
         });
-
         // Only mark best if it doesn't have an error
         if (routes.length > 0 && !routes[0].hasError) routes[0].isBest = true;
 
-        const response: CommuteResponse = {
-            direction: direction as 'toOffice' | 'toHome',
-            asOf: asOfDate.toISOString(),
-            lastUpdated: new Date().toISOString(),
-            routes
-        };
+        const response: CommuteResponse = { direction: direction as 'toOffice' | 'toHome', lastUpdated: new Date().toISOString(), routes };
         res.status(200).json(response);
     } catch (error) {
         console.error('API Error:', error);

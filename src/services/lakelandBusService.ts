@@ -33,59 +33,72 @@ export async function fetchSchedule(): Promise<CachedScheduleData> {
 }
 
 /**
- * Convert time string to minutes since midnight
+ * Convert schedule time (HH:MM in NY timezone) to UTC Date for today
  */
-function timeToMinutes(timeStr: string): number {
-  const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
-  if (!match) return 0;
+function scheduleTimeToUTC(scheduleTime: string): Date {
+  const [hours, minutes] = scheduleTime.split(':').map(Number);
 
-  let [, hourStr, minuteStr, ampm] = match;
-  let hour = parseInt(hourStr, 10);
-  const minute = parseInt(minuteStr, 10);
+  // Get today's date in NY timezone
+  const now = new Date();
+  const nyDateStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const [year, month, day] = nyDateStr.split('-').map(Number);
 
-  if (ampm.toUpperCase() === 'PM' && hour !== 12) {
-    hour += 12;
-  } else if (ampm.toUpperCase() === 'AM' && hour === 12) {
-    hour = 0;
+  // NY is UTC-5 (EST) or UTC-4 (EDT). Try both offsets to find the correct one.
+  for (const offsetHours of [5, 4]) {
+    const candidate = new Date(Date.UTC(year, month - 1, day, hours + offsetHours, minutes, 0, 0));
+
+    // Verify this gives us the right NY time
+    const nyTime = candidate.toLocaleString('en-US', {
+      timeZone: 'America/New_York',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    const [nyH, nyM] = nyTime.split(':').map(Number);
+
+    if (nyH === hours && nyM === minutes) {
+      return candidate;
+    }
   }
 
-  return hour * 60 + minute;
+  // Fallback to EST (UTC-5)
+  return new Date(Date.UTC(year, month - 1, day, hours + 5, minutes, 0, 0));
 }
 
 /**
  * Find next bus departure after arrival time
+ * Returns ISO 8601 UTC string
  */
 export async function findNextBus(arrivalTime: Date, direction: BusDirection): Promise<NextBus | null> {
   try {
     const schedule = await getSchedule();
 
-    // Determine if it's a weekday or weekend
-    const dayOfWeek = arrivalTime.getDay();
-    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    // Determine if it's a weekday or weekend in NY timezone
+    const nyDayStr = arrivalTime.toLocaleDateString('en-US', {
+      timeZone: 'America/New_York',
+      weekday: 'short'
+    });
+    const isWeekend = nyDayStr === 'Sat' || nyDayStr === 'Sun';
     const dayType = isWeekend ? 'weekend' : 'weekday';
 
     const times = schedule.schedules[dayType][direction];
+    if (!times || times.length === 0) return null;
 
-    // Get arrival time in minutes since midnight
-    const arrivalMinutes = arrivalTime.getHours() * 60 + arrivalTime.getMinutes();
-    const arrivalTimeStr = `${arrivalTime.getHours()}:${arrivalTime.getMinutes().toString().padStart(2, '0')}`;
+    console.log(`🚌 Looking for ${direction} bus after ${arrivalTime.toISOString()} on ${dayType}`);
 
-    console.log(`🚌 Looking for ${direction} bus after ${arrivalTimeStr} on ${dayType}`);
-
-    // Find next bus
-    for (const busTime of times) {
-      const busMinutes = timeToMinutes(busTime);
-      if (busMinutes >= arrivalMinutes) {
-        console.log(`  ✅ Found bus at ${busTime} (wait: ${busMinutes - arrivalMinutes} mins)`);
+    // Find first bus that departs after arrivalTime
+    for (const timeStr of times) {
+      const busTimeUTC = scheduleTimeToUTC(timeStr);
+      if (busTimeUTC >= arrivalTime) {
+        console.log(`  ✅ Found bus at ${timeStr} (${busTimeUTC.toISOString()})`);
         return {
-          departureTime: busTime,
-          waitMinutes: busMinutes - arrivalMinutes,
+          departureTime: busTimeUTC.toISOString(),
         };
       }
     }
 
     // No bus found
-    console.log(`  ❌ No ${direction} bus available after ${arrivalTimeStr}`);
+    console.log(`  ❌ No ${direction} bus available after ${arrivalTime.toISOString()}`);
     return null;
   } catch (error) {
     console.error('Failed to find next bus:', error);
@@ -100,7 +113,7 @@ export async function getScheduleMetadata(): Promise<{ lastUpdated: string | nul
   try {
     const schedule = await getSchedule();
     return {
-      lastUpdated: schedule.fetchedAt,
+      lastUpdated: schedule.fetchedAt || null,
       isStale: false, // Backend handles staleness/caching
     };
   } catch {

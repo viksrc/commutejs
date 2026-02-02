@@ -1,122 +1,95 @@
 import { describe, it, expect } from 'vitest';
 
 /**
- * Integration test for Lakeland Bus schedule fetching
- * Tests REAL API calls to verify parsing works correctly
+ * Integration test for Lakeland Bus schedule API
+ * Tests REAL API calls to verify the backend returns valid schedule data
  */
 
 const VERCEL_API_URL = 'https://commutejs.vercel.app/api/lakeland-bus';
 
-const SCHEDULE_IDS = {
-  weekdayEastbound: '25',
-  weekdayWestbound: '32',
-  weekendEastbound: '26',
-  weekendWestbound: '28',
-};
+interface BusSchedule {
+  eastbound: string[];
+  westbound: string[];
+}
 
-function parseScheduleHTML(html: string, stopName: string): string[] {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
-  const rows = Array.from(doc.querySelectorAll('tr.stop-schedule'));
-
-  console.log(`\n🔍 Parsing for stop: "${stopName}"`);
-  console.log(`   Found ${rows.length} rows with class "stop-schedule"`);
-
-  if (rows.length > 0) {
-    console.log('   Available stops:');
-    rows.forEach((row, idx) => {
-      const nameDiv = row.querySelector('.s-name');
-      console.log(`     [${idx}] ${nameDiv?.textContent?.trim() || 'EMPTY'}`);
-    });
-  }
-
-  const stopRow = rows.find(row => {
-    const nameDiv = row.querySelector('.s-name');
-    return nameDiv && nameDiv.textContent?.includes(stopName);
-  });
-
-  if (!stopRow) {
-    console.warn(`   ❌ Stop "${stopName}" NOT FOUND`);
-    return [];
-  }
-
-  const times: string[] = [];
-  const timeCells = stopRow.querySelectorAll('td .s-time span');
-  timeCells.forEach(span => {
-    const time = span.textContent?.trim();
-    if (time && time !== '-') {
-      times.push(time);
-    }
-  });
-
-  console.log(`   ✅ Found ${times.length} times`);
-  return times;
+interface ScheduleResponse {
+  timestamp: number;
+  schedules: {
+    weekday: BusSchedule;
+    weekend: BusSchedule;
+  };
 }
 
 describe('Lakeland Bus Schedule - Integration Test', () => {
-  it('should fetch and parse all 4 schedules correctly', async () => {
-    console.log('\n🧪 INTEGRATION TEST: Fetching real schedules from Lakeland Bus API\n');
+  it('should fetch schedule JSON with valid data', async () => {
+    console.log('\n🧪 INTEGRATION TEST: Fetching schedule from Vercel API\n');
     console.log('━'.repeat(60));
 
-    // Fetch all 4 schedules
-    console.log('\n📡 Fetching schedules...');
-    const [weekdayEastHTML, weekdayWestHTML, weekendEastHTML, weekendWestHTML] = await Promise.all([
-      fetch(`${VERCEL_API_URL}?id=${SCHEDULE_IDS.weekdayEastbound}`).then(r => r.text()),
-      fetch(`${VERCEL_API_URL}?id=${SCHEDULE_IDS.weekdayWestbound}`).then(r => r.text()),
-      fetch(`${VERCEL_API_URL}?id=${SCHEDULE_IDS.weekendEastbound}`).then(r => r.text()),
-      fetch(`${VERCEL_API_URL}?id=${SCHEDULE_IDS.weekendWestbound}`).then(r => r.text()),
-    ]);
+    console.log('\n📡 Fetching schedule...');
+    const response = await fetch(VERCEL_API_URL);
 
-    console.log('✅ Fetched all HTML responses:');
-    console.log(`   Weekday East: ${weekdayEastHTML.length} chars`);
-    console.log(`   Weekday West: ${weekdayWestHTML.length} chars`);
-    console.log(`   Weekend East: ${weekendEastHTML.length} chars`);
-    console.log(`   Weekend West: ${weekendWestHTML.length} chars`);
+    expect(response.ok, 'API should return 200').toBe(true);
 
-    // Parse each schedule
-    console.log('\n📋 Parsing schedules...');
-    console.log('━'.repeat(60));
+    const data: ScheduleResponse = await response.json();
 
-    console.log('\n1️⃣  WEEKDAY EASTBOUND (Waterview → PABT)');
-    const weekdayEastbound = parseScheduleHTML(weekdayEastHTML, 'Parsippany (Waterview P&R)');
+    console.log('✅ Received JSON response');
+    console.log(`   Timestamp: ${new Date(data.timestamp).toISOString()}`);
 
-    console.log('\n2️⃣  WEEKDAY WESTBOUND (PABT → Waterview)');
-    const weekdayWestbound = parseScheduleHTML(weekdayWestHTML, 'NY PABT');
+    // Validate structure
+    expect(data.schedules).toBeDefined();
+    expect(data.schedules.weekday).toBeDefined();
+    expect(data.schedules.weekend).toBeDefined();
 
-    console.log('\n3️⃣  WEEKEND EASTBOUND (Waterview → PABT)');
-    const weekendEastbound = parseScheduleHTML(weekendEastHTML, 'Parsippany (Waterview P&R)');
-
-    console.log('\n4️⃣  WEEKEND WESTBOUND (PABT → Waterview)');
-    const weekendWestbound = parseScheduleHTML(weekendWestHTML, 'LEAVES FROM GATE');
+    const { weekday, weekend } = data.schedules;
 
     // Print results
-    console.log('\n📊 FINAL RESULTS');
+    console.log('\n📊 SCHEDULE DATA');
     console.log('━'.repeat(60));
-    console.log(`Weekday Eastbound:  ${weekdayEastbound.length} times`);
-    if (weekdayEastbound.length > 0) {
-      console.log(`  → ${weekdayEastbound.slice(0, 5).join(', ')}${weekdayEastbound.length > 5 ? '...' : ''}`);
-    }
-    console.log(`Weekday Westbound:  ${weekdayWestbound.length} times`);
-    if (weekdayWestbound.length > 0) {
-      console.log(`  → ${weekdayWestbound.slice(0, 5).join(', ')}${weekdayWestbound.length > 5 ? '...' : ''}`);
-    }
-    console.log(`Weekend Eastbound:  ${weekendEastbound.length} times`);
-    if (weekendEastbound.length > 0) {
-      console.log(`  → ${weekendEastbound.join(', ')}`);
-    }
-    console.log(`Weekend Westbound:  ${weekendWestbound.length} times`);
-    if (weekendWestbound.length > 0) {
-      console.log(`  → ${weekendWestbound.join(', ')}`);
+
+    console.log('\n1️⃣  WEEKDAY EASTBOUND');
+    console.log(`   ${weekday.eastbound.length} buses`);
+    if (weekday.eastbound.length > 0) {
+      console.log(`   First: ${weekday.eastbound[0]}, Last: ${weekday.eastbound[weekday.eastbound.length - 1]}`);
     }
 
-    // Assertions
+    console.log('\n2️⃣  WEEKDAY WESTBOUND');
+    console.log(`   ${weekday.westbound.length} buses`);
+    if (weekday.westbound.length > 0) {
+      console.log(`   First: ${weekday.westbound[0]}, Last: ${weekday.westbound[weekday.westbound.length - 1]}`);
+    }
+
+    console.log('\n3️⃣  WEEKEND EASTBOUND');
+    console.log(`   ${weekend.eastbound.length} buses`);
+    if (weekend.eastbound.length > 0) {
+      console.log(`   Times: ${weekend.eastbound.join(', ')}`);
+    }
+
+    console.log('\n4️⃣  WEEKEND WESTBOUND');
+    console.log(`   ${weekend.westbound.length} buses`);
+    if (weekend.westbound.length > 0) {
+      console.log(`   Times: ${weekend.westbound.join(', ')}`);
+    }
+
+    // Assertions - schedules should have times
     console.log('\n🧪 Running assertions...');
-    expect(weekdayEastbound.length, 'Weekday Eastbound should have times').toBeGreaterThan(0);
-    expect(weekdayWestbound.length, 'Weekday Westbound should have times').toBeGreaterThan(0);
-    expect(weekendEastbound.length, 'Weekend Eastbound should have times').toBeGreaterThan(0);
-    expect(weekendWestbound.length, 'Weekend Westbound should have times').toBeGreaterThan(0);
+    expect(weekday.eastbound.length, 'Weekday Eastbound should have times').toBeGreaterThan(0);
+    expect(weekday.westbound.length, 'Weekday Westbound should have times').toBeGreaterThan(0);
+    expect(weekend.eastbound.length, 'Weekend Eastbound should have times').toBeGreaterThan(0);
+    expect(weekend.westbound.length, 'Weekend Westbound should have times').toBeGreaterThan(0);
+
+    // Validate time format - either HH:MM (new) or "H:MM AM/PM" (old, before deploy)
+    const time = weekday.eastbound[0];
+    const is24HourFormat = /^\d{2}:\d{2}$/.test(time);
+    const is12HourFormat = /^\d{1,2}:\d{2}\s*(AM|PM)$/i.test(time);
+    expect(is24HourFormat || is12HourFormat, `Time "${time}" should be valid format`).toBe(true);
+
+    if (is24HourFormat) {
+      console.log('✅ API returns new 24-hour format (HH:MM)');
+    } else {
+      console.log('⚠️  API still returns old 12-hour format - deploy needed');
+    }
 
     console.log('✅ All assertions passed!\n');
     console.log('━'.repeat(60));
-  }, 60000); // 60 second timeout
+  }, 30000);
 });
