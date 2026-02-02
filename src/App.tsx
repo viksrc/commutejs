@@ -387,12 +387,18 @@ function App() {
                       </button>
                     </div>
                     <div className="route-stats-row">
-                      <span className="eta">ETA: {route.eta ? formatTimeForDisplay(route.eta) : '-'}</span>
-                      <span className="duration">{route.totalDurationSeconds ? formatDuration(route.totalDurationSeconds) : '-'}</span>
-                      <span className={`leave-time ${route.leaveInMins !== undefined ? (route.leaveInMins <= 0 ? 'urgent' : route.leaveInMins <= 5 ? 'soon' : '') : ''}`}>
-                        <span className="leave-label">Leave:</span>
-                        <span className="leave-value">{route.leaveInMins !== undefined ? formatLeaveTime(route.leaveInMins) : '-'}</span>
-                      </span>
+                      {route.hasError ? (
+                        <span className="route-error" style={{ color: '#ff6b6b' }}>Route unavailable</span>
+                      ) : (
+                        <>
+                          <span className="eta">ETA: {route.eta ? formatTimeForDisplay(route.eta) : '-'}</span>
+                          <span className="duration">{route.totalDurationSeconds ? formatDuration(route.totalDurationSeconds) : '-'}</span>
+                          <span className={`leave-time ${route.leaveInMins !== undefined ? (route.leaveInMins <= 0 ? 'urgent' : route.leaveInMins <= 5 ? 'soon' : '') : ''}`}>
+                            <span className="leave-label">Leave:</span>
+                            <span className="leave-value">{route.leaveInMins !== undefined ? formatLeaveTime(route.leaveInMins) : '-'}</span>
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -420,8 +426,15 @@ function App() {
                               <span className="segment-mode">{getModeLabel(segment.mode)}</span>
                               <span className="separator">•</span>
                               <span className="segment-duration">{segment.duration}</span>
+                              {/* Show error if present */}
+                              {segment.error && (
+                                <>
+                                  <span className="separator">•</span>
+                                  <span className="segment-error" style={{ color: '#ff6b6b' }}>{segment.error}</span>
+                                </>
+                              )}
                               {/* Show time range for all segments (convert ISO to local) */}
-                              {segment.departureTime && (
+                              {!segment.error && segment.departureTime && (
                                 <>
                                   <span className="separator">•</span>
                                   <span className="segment-times">
