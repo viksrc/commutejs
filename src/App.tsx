@@ -7,31 +7,36 @@ import { useState, useEffect } from 'react';
 import { LOCATIONS } from './config/locations';
 import { getSchedule } from './services/lakelandBusService';
 
-// Types for commute data
+// Types for commute data - times are ISO 8601 UTC from API
 type CommuteSegment = {
   from: string;
   to: string;
   duration: string;
-  distance: string;
+  durationSeconds: number;
+  distance?: string;
   traffic?: string;
   mode?: 'drive' | 'walk' | 'train' | 'path' | 'bus';
-  departureTime?: string;
-  arrivalTime?: string;
+  departureTime?: string;  // ISO 8601 UTC
+  arrivalTime?: string;    // ISO 8601 UTC
+  error?: string;
 };
 
 type RouteOption = {
   name: string;
-  totalTime: string;
-  eta: string;
+  totalDurationSeconds?: number;
+  startTime?: string;      // ISO 8601 UTC - when to leave
+  eta?: string;            // ISO 8601 UTC - arrival time
   segments: CommuteSegment[];
   isBest?: boolean;
-  leaveInMins?: number;
+  hasError?: boolean;
+  leaveInMins?: number;    // Computed client-side
 };
 
 type CommuteData = {
   direction: 'toOffice' | 'toHome';
+  asOf: string;            // ISO 8601 UTC
   routes: RouteOption[];
-  lastUpdated: string;
+  lastUpdated: string;     // ISO 8601 UTC
 };
 
 // SVG Icons - styled like SF Symbols
@@ -172,109 +177,39 @@ function formatLeaveTime(minutes: number): string {
   return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
 }
 
-
-// Helper to parse duration string to minutes
-function parseDurationToMinutes(duration: string): number {
-  const hoursMatch = duration.match(/(\d+)h/);
-  const minutesMatch = duration.match(/(\d+)m/);
-
-  let totalMinutes = 0;
-  if (hoursMatch) {
-    totalMinutes += parseInt(hoursMatch[1], 10) * 60;
-  }
-  if (minutesMatch) {
-    totalMinutes += parseInt(minutesMatch[1], 10);
-  }
-  return totalMinutes;
+// Format seconds to human-readable duration
+function formatDuration(seconds: number): string {
+  const totalMinutes = Math.round(seconds / 60);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-// Helper to parse time string (e.g., "6:20 AM") to Date object for today
-function parseTimeToDate(timeStr: string): Date | null {
-  const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-  if (!match) return null;
-
-  let hours = parseInt(match[1], 10);
-  const minutes = parseInt(match[2], 10);
-  const period = match[3].toUpperCase();
-
-  if (period === 'PM' && hours !== 12) {
-    hours += 12;
-  } else if (period === 'AM' && hours === 12) {
-    hours = 0;
-  }
-
-  const now = new Date();
-  const result = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0);
-  return result;
+// Format ISO 8601 UTC string to local time display (e.g., "4:29 AM")
+function formatTimeForDisplay(isoString: string): string {
+  const date = new Date(isoString);
+  return date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  });
 }
 
-// Calculate "Leave in X mins" based on first transit departure time
-function calculateLeaveInMins(segments: CommuteSegment[], routeName: string): number | null {
-  // Find the first transit segment (path or train)
-  let transitSegmentIndex = -1;
-  let transitDepartureTime: Date | null = null;
-  let transitDepartureTimeStr = '';
-
-  console.log(`\n=== calculateLeaveInMins for "${routeName}" ===`);
-  console.log('Segments:', segments.map((s, i) => `[${i}] ${s.mode}: ${s.from}→${s.to} (${s.duration}) traffic="${s.traffic}" departureTime="${s.departureTime}"`));
-
-  for (let i = 0; i < segments.length; i++) {
-    const segment = segments[i];
-    if (segment.mode === 'path' || segment.mode === 'train' || segment.mode === 'bus') {
-      transitSegmentIndex = i;
-
-      // Try to get departure time from departureTime field first
-      if (segment.departureTime) {
-        transitDepartureTime = parseTimeToDate(segment.departureTime);
-        transitDepartureTimeStr = segment.departureTime;
-      }
-
-      // If no departureTime, try to parse from traffic field (e.g., "Departs 6:20 AM")
-      if (!transitDepartureTime && segment.traffic) {
-        const departsMatch = segment.traffic.match(/Departs\s+(.+)/i);
-        if (departsMatch) {
-          transitDepartureTime = parseTimeToDate(departsMatch[1]);
-          transitDepartureTimeStr = departsMatch[1];
-        }
-      }
-
-      if (transitDepartureTime) {
-        console.log(`Found transit segment at index ${i}: ${segment.mode} ${segment.from}→${segment.to}`);
-        console.log(`Transit departure time string: "${transitDepartureTimeStr}"`);
-        console.log(`Parsed transit departure time: ${transitDepartureTime.toLocaleTimeString()}`);
-        break;
-      }
-    }
-  }
-
-  // If no transit segment found or no departure time, return null
-  if (transitSegmentIndex === -1 || !transitDepartureTime) {
-    console.log('No transit segment with departure time found, returning null');
+// Calculate "Leave in X mins" based on route start time (ISO 8601 UTC)
+function calculateLeaveInMins(route: RouteOption): number | null {
+  // Use the route's startTime if available
+  if (!route.startTime) {
     return null;
   }
 
-  // Calculate total duration of segments before the transit segment
-  let priorMinutes = 0;
-  for (let i = 0; i < transitSegmentIndex; i++) {
-    const segDuration = parseDurationToMinutes(segments[i].duration);
-    console.log(`Prior segment [${i}] ${segments[i].from}→${segments[i].to}: ${segments[i].duration} = ${segDuration} mins`);
-    priorMinutes += segDuration;
-  }
-  console.log(`Total prior minutes: ${priorMinutes}`);
-
-  // Calculate commute start time = transit departure - prior segments duration
-  const commuteStartTime = new Date(transitDepartureTime.getTime() - priorMinutes * 60000);
-  console.log(`Commute start time: ${commuteStartTime.toLocaleTimeString()} (transit ${transitDepartureTime.toLocaleTimeString()} - ${priorMinutes}m)`);
+  const startTimeUTC = new Date(route.startTime);
+  const now = new Date();
 
   // Buffer: 5 mins for Harrison route, 2 mins otherwise
-  const buffer = routeName.toLowerCase().includes('harrison') ? 5 : 2;
-  console.log(`Buffer: ${buffer} mins`);
+  const buffer = route.name.toLowerCase().includes('harrison') ? 5 : 2;
 
   // Calculate leave in mins = start time - now - buffer
-  const now = new Date();
-  const leaveInMins = Math.round((commuteStartTime.getTime() - now.getTime()) / 60000) - buffer;
-  console.log(`Now: ${now.toLocaleTimeString()}`);
-  console.log(`Leave in mins: (${commuteStartTime.toLocaleTimeString()} - ${now.toLocaleTimeString()}) - ${buffer} = ${leaveInMins}`);
+  const leaveInMins = Math.round((startTimeUTC.getTime() - now.getTime()) / 60000) - buffer;
 
   return leaveInMins;
 }
@@ -310,7 +245,9 @@ function App() {
   // Fetch commute data from backend API
   const fetchCommuteData = async (dir: 'toOffice' | 'toHome') => {
     try {
-      const response = await fetch(`/api/commute?direction=${dir}`);
+      // Send current time as ISO 8601 UTC
+      const asOf = new Date().toISOString();
+      const response = await fetch(`/api/commute?direction=${dir}&asOf=${encodeURIComponent(asOf)}`);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || `API error: ${response.status}`);
@@ -318,16 +255,17 @@ function App() {
 
       const apiData = await response.json();
 
-      // Calculate leave in mins for each route (still done client-side for real-time accuracy)
+      // Calculate leave in mins for each route (client-side for real-time accuracy)
       const routes = apiData.routes.map((route: RouteOption) => ({
         ...route,
-        leaveInMins: calculateLeaveInMins(route.segments, route.name) ?? undefined,
+        leaveInMins: calculateLeaveInMins(route) ?? undefined,
       }));
 
       const data: CommuteData = {
         direction: dir,
+        asOf: apiData.asOf,
         routes,
-        lastUpdated: new Date().toLocaleTimeString(),
+        lastUpdated: apiData.lastUpdated,
       };
 
       return data;
@@ -449,8 +387,8 @@ function App() {
                       </button>
                     </div>
                     <div className="route-stats-row">
-                      <span className="eta">ETA: {route.eta || '-'}</span>
-                      <span className="duration">{route.totalTime || '-'}</span>
+                      <span className="eta">ETA: {route.eta ? formatTimeForDisplay(route.eta) : '-'}</span>
+                      <span className="duration">{route.totalDurationSeconds ? formatDuration(route.totalDurationSeconds) : '-'}</span>
                       <span className={`leave-time ${route.leaveInMins !== undefined ? (route.leaveInMins <= 0 ? 'urgent' : route.leaveInMins <= 5 ? 'soon' : '') : ''}`}>
                         <span className="leave-label">Leave:</span>
                         <span className="leave-value">{route.leaveInMins !== undefined ? formatLeaveTime(route.leaveInMins) : '-'}</span>
@@ -482,12 +420,12 @@ function App() {
                               <span className="segment-mode">{getModeLabel(segment.mode)}</span>
                               <span className="separator">•</span>
                               <span className="segment-duration">{segment.duration}</span>
-                              {/* Show time range for all segments */}
+                              {/* Show time range for all segments (convert ISO to local) */}
                               {segment.departureTime && (
                                 <>
                                   <span className="separator">•</span>
                                   <span className="segment-times">
-                                    {segment.departureTime}{segment.arrivalTime ? ` → ${segment.arrivalTime}` : ''}
+                                    {formatTimeForDisplay(segment.departureTime)}{segment.arrivalTime ? ` → ${formatTimeForDisplay(segment.arrivalTime)}` : ''}
                                   </span>
                                 </>
                               )}
@@ -521,7 +459,7 @@ function App() {
             })}
 
             {/* Last Updated */}
-            <p className="updated-text">Updated {commuteData.lastUpdated}</p>
+            <p className="updated-text">Updated {formatTimeForDisplay(commuteData.lastUpdated)}</p>
           </>
         ) : null}
       </div>
