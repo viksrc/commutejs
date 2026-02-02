@@ -12,7 +12,7 @@ interface CommuteSegment {
     duration: string;
     durationSeconds: number;
     distance?: string;
-    traffic?: string;
+    trafficDelayMins?: number;  // Delay in minutes vs no-traffic duration
     departureTime?: string;  // ISO 8601 UTC
     arrivalTime?: string;    // ISO 8601 UTC
     error?: string;
@@ -196,7 +196,7 @@ async function fetchDrivingDirections(origin: string, destination: string): Prom
             duration: formatDuration(durationSeconds),
             durationSeconds,
             distance: `${distanceMiles} mi`,
-            traffic: getTrafficStatus(staticDurationSeconds, durationSeconds),
+            trafficDelayMins: getTrafficDelayMins(staticDurationSeconds, durationSeconds),
         };
     } catch (error) {
         console.error('Error fetching driving directions:', error);
@@ -272,7 +272,7 @@ async function fetchTransitDirections(origin: string, destination: string, depar
             duration: formatDuration(durationSeconds),
             durationSeconds,
             distance: hasPath ? 'PATH + walk' : `${(route.distanceMeters * 0.000621371).toFixed(1)} mi`,
-            traffic: delayMinutes > 2 ? `Delays (+${delayMinutes} min)` : 'On time',
+            trafficDelayMins: delayMinutes,
             departureTime: departureTimeISO,
             arrivalTime: arrivalTimeISO,
         };
@@ -282,12 +282,8 @@ async function fetchTransitDirections(origin: string, destination: string, depar
     }
 }
 
-function getTrafficStatus(staticDuration: number, actualDuration: number): string {
-    const delayPercentage = ((actualDuration - staticDuration) / staticDuration) * 100;
-    if (delayPercentage < 5) return 'Light traffic';
-    else if (delayPercentage < 15) return 'Moderate traffic';
-    else if (delayPercentage < 30) return 'Heavy traffic';
-    return `Severe delays (+${Math.round((actualDuration - staticDuration) / 60)} min)`;
+function getTrafficDelayMins(staticDuration: number, actualDuration: number): number {
+    return Math.round((actualDuration - staticDuration) / 60);
 }
 
 // ============ HELPERS ============
@@ -500,8 +496,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         to: segConfig.toLabel,
                         duration: segConfig.duration,
                         durationSeconds: walkDurationSeconds,
-                        distance: '-',
-                        traffic: 'Walk'
+                        distance: '-'
                     };
                 } else if (segConfig.type === 'transit') {
                     // Pass the estimated arrival time (UTC) so Google returns the correct route
@@ -536,7 +531,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                             duration: busDuration,
                             durationSeconds: busDurationSeconds,
                             distance: driveRes?.distance || '30 mi',
-                            traffic: 'Scheduled',
                             departureTime: nextBus.departureTimeUTC.toISOString(),
                             arrivalTime: arrivalTimeUTC.toISOString()
                         };

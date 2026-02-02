@@ -14,7 +14,7 @@ type CommuteSegment = {
   duration: string;
   durationSeconds: number;
   distance?: string;
-  traffic?: string;
+  trafficDelayMins?: number;
   mode?: 'drive' | 'walk' | 'train' | 'path' | 'bus';
   departureTime?: string;  // ISO 8601 UTC
   arrivalTime?: string;    // ISO 8601 UTC
@@ -112,14 +112,11 @@ function getModeLabel(mode?: 'drive' | 'walk' | 'train' | 'path' | 'bus'): strin
   }
 }
 
-// Helper to get traffic class
-function getTrafficClass(traffic?: string): string {
-  if (!traffic) return '';
-  const lower = traffic.toLowerCase();
-  if (lower.includes('light') || lower.includes('on time')) return 'light';
-  if (lower.includes('moderate')) return 'moderate';
-  if (lower.includes('heavy') || lower.includes('severe') || lower.includes('delay')) return 'heavy';
-  return '';
+// Helper to get traffic delay color based on minutes
+function getTrafficColor(delayMins?: number): string {
+  if (delayMins === undefined || delayMins <= 2) return '#34c759'; // Green - minimal delay
+  if (delayMins <= 10) return '#ff9500'; // Orange - moderate delay
+  return '#ff3b30'; // Red - heavy delay
 }
 
 // Helper function to open Google Maps with directions
@@ -429,11 +426,11 @@ function App() {
                                   </span>
                                 </>
                               )}
-                              {segment.traffic && segment.mode === 'drive' && (
+                              {segment.mode === 'drive' && segment.trafficDelayMins !== undefined && (
                                 <>
                                   <span className="separator">•</span>
-                                  <span className={`segment-traffic ${getTrafficClass(segment.traffic)}`}>
-                                    {segment.traffic.replace(' traffic', '')}
+                                  <span style={{ color: getTrafficColor(segment.trafficDelayMins), fontWeight: 500 }}>
+                                    {segment.trafficDelayMins > 0 ? `+${segment.trafficDelayMins}m` : 'Clear'}
                                   </span>
                                 </>
                               )}
