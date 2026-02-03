@@ -277,8 +277,9 @@ async function fetchTransitDirections(origin: string, destination: string, depar
             duration: formatDuration(Math.round(durationSeconds / 60)),
             distance: hasPath ? 'PATH + walk' : `${(route.distanceMeters * 0.000621371).toFixed(1)} mi`,
             traffic: delayMinutes > 2 ? `Delays (+${delayMinutes} min)` : 'On time',
-            departureTime: departureTimeStr,
-            arrivalTime: arrivalTimeStr,
+            // Return ISO 8601 UTC strings for frontend to format
+            departureTime: departureDate?.toISOString(),
+            arrivalTime: arrivalDate?.toISOString(),
             // @ts-ignore - internal use
             departureDate,
             // @ts-ignore - internal use
@@ -491,11 +492,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         const busDepDate = new Date(nextBus.departureTime);
                         const busDepDisplay = formatTimeToAMPM(busDepDate);
                         const busArrDate = new Date(busDepDate.getTime() + parseDurationToMinutes(busDuration) * 60000);
-                        const busArrDisplay = formatTimeToAMPM(busArrDate);
                         segment = {
                             mode: 'bus', from: segConfig.fromLabel, to: segConfig.toLabel, duration: busDuration,
                             distance: driveRes?.distance || '30 mi', traffic: `Departs ${busDepDisplay}`,
-                            departureTime: busDepDisplay, arrivalTime: busArrDisplay
+                            // Return ISO 8601 UTC strings
+                            departureTime: busDepDate.toISOString(), arrivalTime: busArrDate.toISOString()
                         };
                         fixedDepartureTime = busDepDate;
                     } else {
@@ -573,13 +574,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     currentTime = sd.fixedDepartureTime;
                 }
 
-                // Set departure time
-                segment.departureTime = formatTimeToAMPM(currentTime);
+                // Set departure time as ISO 8601 UTC
+                segment.departureTime = currentTime.toISOString();
 
                 // Calculate arrival time
                 const durationMins = parseDurationToMinutes(segment.duration);
                 const arrivalDate = new Date(currentTime.getTime() + durationMins * 60000);
-                segment.arrivalTime = formatTimeToAMPM(arrivalDate);
+                segment.arrivalTime = arrivalDate.toISOString();
 
                 // Advance current time to arrival
                 currentTime = arrivalDate;
@@ -594,8 +595,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 } else {
                     let totalMinutes = 0;
                     if (segments[0].departureTime && segments[segments.length - 1].arrivalTime) {
-                        totalMinutes = parseTimeMinutes(segments[segments.length - 1].arrivalTime!) - parseTimeMinutes(segments[0].departureTime);
-                        if (totalMinutes < 0) totalMinutes += 1440; // OBJECTIVELY NECESSARY FIX
+                        // Times are now ISO 8601, use Date objects for calculation
+                        const startTime = new Date(segments[0].departureTime);
+                        const endTime = new Date(segments[segments.length - 1].arrivalTime);
+                        totalMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
+                        if (totalMinutes < 0) totalMinutes += 1440;
                     }
                     routes.push({ name: routeConfig.name, segments, totalTime: formatDuration(totalMinutes), eta: segments[segments.length - 1].arrivalTime || 'Unknown', isBest: false });
                 }
