@@ -46,32 +46,57 @@ function parseScheduleHTML(html: string, stopName: string): string[] {
 }
 
 /**
- * Convert 12-hour time (without AM/PM) to 24-hour "HH:MM" format
- * Uses schedule context to determine AM/PM
+ * Convert a list of 12-hour times (without AM/PM) to 24-hour "HH:MM" format.
+ * Times must be in chronological order. We track when we cross noon to flip to PM.
  */
-function to24Hour(time: string, direction: 'eastbound' | 'westbound', isWeekend: boolean): string {
-    const [hourStr, minute] = time.split(':');
-    let hour = parseInt(hourStr, 10);
+function convertTimesTo24Hour(times: string[], startHour: number): string[] {
+    const result: string[] = [];
+    let lastHour24 = startHour; // Track 24-hour value to detect wraparound
 
-    // Determine if this hour is AM or PM based on schedule context
-    // Schedule times are in 12-hour format without AM/PM markers
-    let isAM: boolean;
-    if (direction === 'eastbound') {
-        // Eastbound: early morning departures (4-11 AM), then noon onwards
-        isAM = isWeekend ? (hour >= 7 && hour <= 11) : (hour >= 4 && hour <= 11);
-    } else {
-        // Westbound: morning departures (7-11 AM), then afternoon/evening
-        isAM = isWeekend ? (hour >= 9 && hour <= 11) : (hour >= 7 && hour <= 11);
+    for (const time of times) {
+        const [hourStr, minute] = time.split(':');
+        const hour12 = parseInt(hourStr, 10);
+
+        // Determine 24-hour value based on chronological order
+        let hour24: number;
+
+        if (hour12 === 12) {
+            // 12 is always noon (12:xx PM) in our schedules
+            hour24 = 12;
+        } else {
+            // Check if this hour should be AM or PM based on last hour
+            // If lastHour was >= 12 (PM), and current hour12 < last hour12, we're still in PM
+            if (lastHour24 >= 12 && hour12 < 12) {
+                // We're in PM territory
+                hour24 = hour12 + 12;
+            } else if (lastHour24 < 12 && hour12 < lastHour24 % 12) {
+                // We've crossed from AM to PM (e.g., 11 -> 12 -> 1)
+                hour24 = hour12 + 12;
+            } else if (lastHour24 >= 12 && hour12 >= (lastHour24 % 12 || 12)) {
+                // Continuing in PM
+                hour24 = hour12 + 12;
+            } else {
+                // Still in AM
+                hour24 = hour12;
+            }
+        }
+
+        // Sanity check: hours should only increase (chronological order)
+        // If hour24 would be less than lastHour24, we need to add 12
+        if (hour24 < lastHour24) {
+            hour24 += 12;
+        }
+
+        // Cap at 23 (no buses after midnight)
+        if (hour24 > 23) {
+            hour24 = hour24 % 24;
+        }
+
+        lastHour24 = hour24;
+        result.push(`${hour24.toString().padStart(2, '0')}:${minute}`);
     }
 
-    // Convert to 24-hour format
-    if (!isAM && hour !== 12) {
-        hour += 12;
-    }
-    // hour 12 PM stays as 12 (noon)
-    // No midnight (12 AM) buses in the schedule
-
-    return `${hour.toString().padStart(2, '0')}:${minute}`;
+    return result;
 }
 
 export async function getSchedule(): Promise<CachedScheduleData> {
@@ -97,13 +122,18 @@ export async function getSchedule(): Promise<CachedScheduleData> {
         fetchHTML(SCHEDULE_IDS.weekendWestbound),
     ]);
 
-    const weekdayEastbound = parseScheduleHTML(weekdayEastHTML, 'Parsippany (Waterview P&R)').map(t => to24Hour(t, 'eastbound', false));
-    const weekdayWestbound = parseScheduleHTML(weekdayWestHTML, 'NY PABT').map(t => to24Hour(t, 'westbound', false));
-    const weekendEastbound = parseScheduleHTML(weekendEastHTML, 'Parsippany (Waterview P&R)').map(t => to24Hour(t, 'eastbound', true));
-    const weekendWestbound = parseScheduleHTML(weekendWestHTML, 'Depart New York PABT').map(t => to24Hour(t, 'westbound', true));
+    // Parse and convert times, using starting hour hint for each schedule
+    // Eastbound starts early morning (4-5 AM), westbound starts later (7-9 AM)
+    const weekdayEastbound = convertTimesTo24Hour(parseScheduleHTML(weekdayEastHTML, 'Parsippany (Waterview P&R)'), 4);
+    const weekdayWestbound = convertTimesTo24Hour(parseScheduleHTML(weekdayWestHTML, 'NY PABT'), 7);
+    const weekendEastbound = convertTimesTo24Hour(parseScheduleHTML(weekendEastHTML, 'Parsippany (Waterview P&R)'), 7);
+    const weekendWestbound = convertTimesTo24Hour(parseScheduleHTML(weekendWestHTML, 'Depart New York PABT'), 9);
 
     console.log(`[getSchedule] Parsed schedules - weekday eastbound: ${weekdayEastbound.length}, westbound: ${weekdayWestbound.length}`);
     console.log(`[getSchedule] Parsed schedules - weekend eastbound: ${weekendEastbound.length}, westbound: ${weekendWestbound.length}`);
+    if (weekdayEastbound.length > 0) {
+        console.log(`[getSchedule] weekday eastbound sample: ${weekdayEastbound.slice(0, 5).join(', ')} ... ${weekdayEastbound.slice(-3).join(', ')}`);
+    }
 
     const scheduleData: CachedScheduleData = {
         timestamp: now,

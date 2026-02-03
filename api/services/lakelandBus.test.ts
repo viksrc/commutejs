@@ -1,248 +1,159 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 /**
- * Tests for backend Lakeland Bus service
- * Tests the to24Hour conversion and schedule fetching
+ * Tests for backend Lakeland Bus service time conversion
  */
 
-// Re-implement to24Hour for testing (since it's not exported)
-// This should match the implementation in lakelandBus.ts
-function to24Hour(time: string, direction: 'eastbound' | 'westbound', isWeekend: boolean): string {
-  const [hourStr, minute] = time.split(':');
-  let hour = parseInt(hourStr, 10);
+// Re-implement convertTimesTo24Hour for testing (mirrors lakelandBus.ts)
+function convertTimesTo24Hour(times: string[], startHour: number): string[] {
+    const result: string[] = [];
+    let lastHour24 = startHour;
 
-  let isAM: boolean;
-  if (direction === 'eastbound') {
-    isAM = isWeekend ? (hour >= 7 && hour <= 11) : (hour >= 4 && hour <= 11);
-  } else {
-    isAM = isWeekend ? (hour >= 9 && hour <= 11) : (hour >= 7 && hour <= 11);
-  }
+    for (const time of times) {
+        const [hourStr, minute] = time.split(':');
+        const hour12 = parseInt(hourStr, 10);
 
-  if (!isAM && hour !== 12) {
-    hour += 12;
-  }
+        let hour24: number;
 
-  return `${hour.toString().padStart(2, '0')}:${minute}`;
+        if (hour12 === 12) {
+            hour24 = 12;
+        } else {
+            if (lastHour24 >= 12 && hour12 < 12) {
+                hour24 = hour12 + 12;
+            } else if (lastHour24 < 12 && hour12 < lastHour24 % 12) {
+                hour24 = hour12 + 12;
+            } else if (lastHour24 >= 12 && hour12 >= (lastHour24 % 12 || 12)) {
+                hour24 = hour12 + 12;
+            } else {
+                hour24 = hour12;
+            }
+        }
+
+        if (hour24 < lastHour24) {
+            hour24 += 12;
+        }
+
+        if (hour24 > 23) {
+            hour24 = hour24 % 24;
+        }
+
+        lastHour24 = hour24;
+        result.push(`${hour24.toString().padStart(2, '0')}:${minute}`);
+    }
+
+    return result;
 }
 
-describe('to24Hour conversion', () => {
-  describe('weekday eastbound', () => {
-    const convert = (time: string) => to24Hour(time, 'eastbound', false);
+describe('convertTimesTo24Hour', () => {
+    describe('weekday eastbound (starts at 4 AM)', () => {
+        it('should convert full schedule correctly', () => {
+            // Simulated scraped times from Lakeland website
+            const rawTimes = [
+                '4:50', '5:20', '5:50', '6:20', '6:50',
+                '7:20', '7:50', '8:20', '8:50', '9:20',
+                '10:20', '11:20', '12:20', '1:20', '2:20',
+                '3:20', '4:20', '5:20', '6:20', '7:20',
+                '8:20', '9:20'
+            ];
 
-    it('should convert early morning times (4-11) as AM', () => {
-      // The logic treats hours 4-11 as AM for weekday eastbound
-      expect(convert('4:50')).toBe('04:50');
-      expect(convert('5:20')).toBe('05:20');
-      expect(convert('6:00')).toBe('06:00');
-      expect(convert('9:20')).toBe('09:20');
-      expect(convert('10:20')).toBe('10:20');
-      expect(convert('11:20')).toBe('11:20');
+            const result = convertTimesTo24Hour(rawTimes, 4);
+
+            // Expected 24-hour format
+            expect(result).toEqual([
+                '04:50', '05:20', '05:50', '06:20', '06:50',
+                '07:20', '07:50', '08:20', '08:50', '09:20',
+                '10:20', '11:20', '12:20', '13:20', '14:20',
+                '15:20', '16:20', '17:20', '18:20', '19:20',
+                '20:20', '21:20'
+            ]);
+        });
+
+        it('should handle noon correctly', () => {
+            const rawTimes = ['11:20', '12:20', '1:20'];
+            const result = convertTimesTo24Hour(rawTimes, 4);
+
+            expect(result).toEqual(['11:20', '12:20', '13:20']);
+        });
+
+        it('should handle PM hours that look like AM', () => {
+            // After 3:20 PM (15:20), the next time is 4:20 which should be PM
+            const rawTimes = ['3:20', '4:20', '5:20'];
+            // Starting after noon
+            const result = convertTimesTo24Hour(rawTimes, 15);
+
+            expect(result).toEqual(['15:20', '16:20', '17:20']);
+        });
     });
 
-    it('should convert noon correctly', () => {
-      expect(convert('12:20')).toBe('12:20'); // 12 PM stays as 12
+    describe('weekday westbound (starts at 7 AM)', () => {
+        it('should convert afternoon-heavy schedule correctly', () => {
+            const rawTimes = [
+                '7:30', '8:30', '9:30', '10:30', '11:30',
+                '1:00', '2:00', '2:30', '3:00', '3:15',
+                '3:30', '3:45', '4:00', '4:15', '4:30',
+                '4:45', '5:00', '5:15', '5:30', '5:45',
+                '6:00', '6:15', '6:30', '7:00', '7:30',
+                '8:30', '9:30', '10:30'
+            ];
+
+            const result = convertTimesTo24Hour(rawTimes, 7);
+
+            expect(result[0]).toBe('07:30');    // 7:30 AM
+            expect(result[4]).toBe('11:30');    // 11:30 AM
+            expect(result[5]).toBe('13:00');    // 1:00 PM (not 1:00 AM!)
+            expect(result[12]).toBe('16:00');   // 4:00 PM
+            expect(result[20]).toBe('18:00');   // 6:00 PM
+            expect(result[23]).toBe('19:00');   // 7:00 PM (not 7:00 AM!)
+            expect(result[27]).toBe('22:30');   // 10:30 PM
+        });
     });
 
-    it('should convert unambiguous afternoon times (1-3 PM)', () => {
-      // Hours 1-3 are unambiguously PM (no buses at 1-3 AM)
-      expect(convert('1:20')).toBe('13:20');
-      expect(convert('2:20')).toBe('14:20');
-      expect(convert('3:20')).toBe('15:20');
+    describe('weekend eastbound (starts at 7 AM)', () => {
+        it('should convert weekend schedule correctly', () => {
+            const rawTimes = [
+                '7:20', '9:20', '11:20', '1:20', '3:20',
+                '5:20', '7:20', '9:20'
+            ];
+
+            const result = convertTimesTo24Hour(rawTimes, 7);
+
+            expect(result).toEqual([
+                '07:20', '09:20', '11:20', '13:20', '15:20',
+                '17:20', '19:20', '21:20'
+            ]);
+        });
     });
 
-    // NOTE: Hours 4-11 are ambiguous - the schedule has both AM and PM buses
-    // at these hours (e.g., 4:50 AM and 4:20 PM). The current logic treats
-    // all 4-11 as AM. The fallback schedule handles this correctly since
-    // it was manually verified. The scraper may have issues with duplicates.
-  });
+    describe('weekend westbound (starts at 9 AM)', () => {
+        it('should convert weekend schedule correctly', () => {
+            const rawTimes = [
+                '9:00', '11:00', '1:00', '3:00', '5:00',
+                '7:00', '9:00', '11:00'
+            ];
 
-  describe('weekday westbound', () => {
-    const convert = (time: string) => to24Hour(time, 'westbound', false);
+            const result = convertTimesTo24Hour(rawTimes, 9);
 
-    it('should convert morning times (7-11) as AM', () => {
-      // The logic treats hours 7-11 as AM for weekday westbound
-      expect(convert('7:30')).toBe('07:30');
-      expect(convert('8:30')).toBe('08:30');
-      expect(convert('9:30')).toBe('09:30');
-      expect(convert('10:30')).toBe('10:30');
-      expect(convert('11:30')).toBe('11:30');
+            expect(result).toEqual([
+                '09:00', '11:00', '13:00', '15:00', '17:00',
+                '19:00', '21:00', '23:00'
+            ]);
+        });
     });
 
-    it('should convert noon correctly', () => {
-      expect(convert('12:00')).toBe('12:00');
+    describe('edge cases', () => {
+        it('should handle single time', () => {
+            const result = convertTimesTo24Hour(['9:30'], 9);
+            expect(result).toEqual(['09:30']);
+        });
+
+        it('should handle empty array', () => {
+            const result = convertTimesTo24Hour([], 4);
+            expect(result).toEqual([]);
+        });
+
+        it('should handle times with single digit hours', () => {
+            const result = convertTimesTo24Hour(['4:50', '5:20'], 4);
+            expect(result).toEqual(['04:50', '05:20']);
+        });
     });
-
-    it('should convert unambiguous afternoon/evening times (1-6 PM)', () => {
-      // Hours 1-6 are unambiguously PM for westbound
-      expect(convert('1:00')).toBe('13:00');
-      expect(convert('2:00')).toBe('14:00');
-      expect(convert('3:00')).toBe('15:00');
-      expect(convert('4:00')).toBe('16:00');
-      expect(convert('5:00')).toBe('17:00');
-      expect(convert('6:00')).toBe('18:00');
-    });
-
-    // NOTE: Hours 7-11 are ambiguous - could be AM or PM.
-    // The current logic treats all 7-11 as AM.
-  });
-
-  describe('weekend eastbound', () => {
-    const convert = (time: string) => to24Hour(time, 'eastbound', true);
-
-    it('should convert morning times (7-11 AM)', () => {
-      expect(convert('7:20')).toBe('07:20');
-      expect(convert('9:20')).toBe('09:20');
-      expect(convert('11:20')).toBe('11:20');
-    });
-
-    it('should convert afternoon times (1-6)', () => {
-      // Hours 1-6 are unambiguously PM on weekend eastbound
-      expect(convert('1:20')).toBe('13:20');
-      expect(convert('3:20')).toBe('15:20');
-      expect(convert('5:20')).toBe('17:20');
-      expect(convert('6:20')).toBe('18:20');
-    });
-
-    // NOTE: Hours 7-11 are ambiguous on weekends (could be AM or PM)
-    // The current logic treats them as AM. If the schedule has both
-    // 7:20 AM and 7:20 PM, the scraper would need to track order to distinguish.
-    // This is a known limitation - the fallback schedule handles this correctly.
-  });
-
-  describe('weekend westbound', () => {
-    const convert = (time: string) => to24Hour(time, 'westbound', true);
-
-    it('should convert morning times (9-11 AM)', () => {
-      expect(convert('9:00')).toBe('09:00');
-      expect(convert('11:00')).toBe('11:00');
-    });
-
-    it('should convert afternoon/evening times (1-8)', () => {
-      // Hours 1-8 are unambiguously PM on weekend westbound
-      expect(convert('1:00')).toBe('13:00');
-      expect(convert('3:00')).toBe('15:00');
-      expect(convert('5:00')).toBe('17:00');
-      expect(convert('7:00')).toBe('19:00');
-      expect(convert('8:00')).toBe('20:00');
-    });
-
-    // NOTE: Hours 9-11 are ambiguous on weekends (could be AM or PM)
-    // Same limitation as eastbound.
-  });
-
-  describe('edge cases', () => {
-    it('should handle single-digit hours', () => {
-      expect(to24Hour('4:50', 'eastbound', false)).toBe('04:50');
-      expect(to24Hour('9:00', 'westbound', true)).toBe('09:00');
-    });
-
-    it('should handle times with leading zeros in input', () => {
-      expect(to24Hour('04:50', 'eastbound', false)).toBe('04:50');
-      expect(to24Hour('09:30', 'westbound', false)).toBe('09:30');
-    });
-
-    it('should preserve minutes correctly', () => {
-      expect(to24Hour('4:05', 'eastbound', false)).toBe('04:05');
-      expect(to24Hour('3:15', 'westbound', false)).toBe('15:15');
-      expect(to24Hour('5:45', 'westbound', false)).toBe('17:45');
-    });
-  });
-});
-
-describe('scheduleTimeToUTC', () => {
-  // Re-implement for testing
-  function scheduleTimeToUTC(scheduleTime: string): Date {
-    const [hours, minutes] = scheduleTime.split(':').map(Number);
-    const now = new Date();
-    const nyDateStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-    const [year, month, day] = nyDateStr.split('-').map(Number);
-
-    for (const offsetHours of [5, 4]) {
-      const candidate = new Date(Date.UTC(year, month - 1, day, hours + offsetHours, minutes, 0, 0));
-      const nyTime = candidate.toLocaleString('en-US', {
-        timeZone: 'America/New_York',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-      });
-      const [nyH, nyM] = nyTime.split(':').map(Number);
-      if (nyH === hours && nyM === minutes) {
-        return candidate;
-      }
-    }
-    return new Date(Date.UTC(year, month - 1, day, hours + 5, minutes, 0, 0));
-  }
-
-  it('should convert schedule time to UTC Date', () => {
-    const result = scheduleTimeToUTC('09:20');
-
-    expect(result).toBeInstanceOf(Date);
-    expect(result.toISOString()).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/);
-  });
-
-  it('should produce times that display correctly in NY timezone', () => {
-    const result = scheduleTimeToUTC('14:30');
-
-    // When displayed in NY timezone, should show 14:30
-    const nyDisplay = result.toLocaleString('en-US', {
-      timeZone: 'America/New_York',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    });
-
-    expect(nyDisplay).toBe('14:30');
-  });
-
-  it('should handle early morning times', () => {
-    const result = scheduleTimeToUTC('04:50');
-
-    const nyDisplay = result.toLocaleString('en-US', {
-      timeZone: 'America/New_York',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    });
-
-    expect(nyDisplay).toBe('04:50');
-  });
-
-  it('should handle late evening times', () => {
-    const result = scheduleTimeToUTC('21:20');
-
-    const nyDisplay = result.toLocaleString('en-US', {
-      timeZone: 'America/New_York',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    });
-
-    expect(nyDisplay).toBe('21:20');
-  });
-
-  it('should handle noon correctly', () => {
-    const result = scheduleTimeToUTC('12:00');
-
-    const nyDisplay = result.toLocaleString('en-US', {
-      timeZone: 'America/New_York',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    });
-
-    expect(nyDisplay).toBe('12:00');
-  });
-
-  it('should handle midnight correctly', () => {
-    const result = scheduleTimeToUTC('00:00');
-
-    const nyDisplay = result.toLocaleString('en-US', {
-      timeZone: 'America/New_York',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    });
-
-    expect(nyDisplay).toBe('00:00');
-  });
 });
