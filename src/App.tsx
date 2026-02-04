@@ -165,9 +165,15 @@ function openGoogleMaps(segment: CommuteSegment) {
   });
 
   // Create Google Maps web URL
-  const url = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(
+  let url = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(
     fromAddress
   )}&destination=${encodeURIComponent(toAddress)}&travelmode=${travelMode}`;
+
+  // Add departure time parameter if available (Unix timestamp in seconds)
+  if (segment.departureTime) {
+    const departureTimestamp = Math.floor(new Date(segment.departureTime).getTime() / 1000);
+    url += `&departure_time=${departureTimestamp}`;
+  }
 
   window.open(url, '_blank');
 }
