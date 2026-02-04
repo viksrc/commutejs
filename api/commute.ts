@@ -711,11 +711,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
                 // For transit/bus with actual times from Google, use those times
                 // For drive/walk, calculate based on currentTime
-                if (sd.fixedDepartureTime && sd.segment.departureDate && sd.segment.arrivalDate) {
+                const hasFixedDep = !!sd.fixedDepartureTime;
+                const hasDepDate = !!(sd.segment as any).departureDate;
+                const hasArrDate = !!(sd.segment as any).arrivalDate;
+                (segment as any)._debug = { hasFixedDep, hasDepDate, hasArrDate, segType: sd.segConfig.type };
+
+                if (hasFixedDep && hasDepDate && hasArrDate) {
                     // Use actual times from Google
-                    segment.departureTime = sd.segment.departureDate.toISOString();
-                    segment.arrivalTime = sd.segment.arrivalDate.toISOString();
-                    currentTime = sd.segment.arrivalDate;
+                    segment.departureTime = ((sd.segment as any).departureDate as Date).toISOString();
+                    segment.arrivalTime = ((sd.segment as any).arrivalDate as Date).toISOString();
+                    currentTime = (sd.segment as any).arrivalDate as Date;
                 } else {
                     // Calculate times for drive/walk segments
                     segment.departureTime = currentTime.toISOString();
