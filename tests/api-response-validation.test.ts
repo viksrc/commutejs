@@ -20,6 +20,8 @@ interface CommuteSegment {
 interface RouteOption {
   name: string;
   totalTime?: string;
+  totalDurationSeconds?: number;
+  startTime?: string;
   eta?: string;
   hasError?: boolean;
   segments: CommuteSegment[];
@@ -134,6 +136,129 @@ describe('Vercel API Response Validation', () => {
           `Route "${route.name}" has invalid totalTime format: "${route.totalTime}"`
         ).toBe(true);
       }
+    }
+  }, 30000);
+
+  it('should have all routes start at or after the requested asOf time', async () => {
+    // Test with a future time (tomorrow at 7 AM NY time)
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(7, 0, 0, 0);
+    const asOf = tomorrow.toISOString();
+
+    const response = await fetch(`${API_URL}?direction=toOffice&asOf=${encodeURIComponent(asOf)}`);
+    expect(response.ok, 'API should return 200').toBe(true);
+
+    const data: CommuteResponse = await response.json();
+
+    for (const route of data.routes) {
+      if (route.hasError) continue;
+
+      // Find the first segment's departure time (route start time)
+      const firstSegment = route.segments[0];
+      if (firstSegment && firstSegment.departureTime && !firstSegment.error) {
+        const routeStartTime = new Date(firstSegment.departureTime);
+        const requestedTime = new Date(asOf);
+
+        expect(
+          routeStartTime.getTime() >= requestedTime.getTime(),
+          `Route "${route.name}" starts at ${routeStartTime.toISOString()} which is before requested time ${asOf}`
+        ).toBe(true);
+      }
+    }
+  }, 30000);
+
+  it('should have all routes start at or after asOf time for toHome direction', async () => {
+    // Test with a future time (tomorrow at 5 PM NY time)
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(17, 0, 0, 0);
+    const asOf = tomorrow.toISOString();
+
+    const response = await fetch(`${API_URL}?direction=toHome&asOf=${encodeURIComponent(asOf)}`);
+    expect(response.ok, 'API should return 200').toBe(true);
+
+    const data: CommuteResponse = await response.json();
+
+    for (const route of data.routes) {
+      if (route.hasError) continue;
+
+      const firstSegment = route.segments[0];
+      if (firstSegment && firstSegment.departureTime && !firstSegment.error) {
+        const routeStartTime = new Date(firstSegment.departureTime);
+        const requestedTime = new Date(asOf);
+
+        expect(
+          routeStartTime.getTime() >= requestedTime.getTime(),
+          `Route "${route.name}" starts at ${routeStartTime.toISOString()} which is before requested time ${asOf}`
+        ).toBe(true);
+      }
+    }
+  }, 30000);
+
+  it('should have totalDurationSeconds for non-error routes (required for UI duration display)', async () => {
+    const response = await fetch(`${API_URL}?direction=toOffice`);
+    const data: CommuteResponse = await response.json();
+
+    for (const route of data.routes) {
+      if (route.hasError) continue;
+
+      expect(
+        typeof route.totalDurationSeconds === 'number' && route.totalDurationSeconds > 0,
+        `Route "${route.name}" missing or invalid totalDurationSeconds: ${route.totalDurationSeconds}`
+      ).toBe(true);
+    }
+  }, 30000);
+
+  it('should have startTime for non-error routes (required for UI Leave time display)', async () => {
+    const response = await fetch(`${API_URL}?direction=toOffice`);
+    const data: CommuteResponse = await response.json();
+
+    for (const route of data.routes) {
+      if (route.hasError) continue;
+
+      // startTime should be a valid ISO 8601 date string
+      expect(
+        route.startTime && !isNaN(new Date(route.startTime).getTime()),
+        `Route "${route.name}" missing or invalid startTime: ${route.startTime}`
+      ).toBe(true);
+    }
+  }, 30000);
+
+  it('should have startTime matching first segment departureTime', async () => {
+    const response = await fetch(`${API_URL}?direction=toOffice`);
+    const data: CommuteResponse = await response.json();
+
+    for (const route of data.routes) {
+      if (route.hasError) continue;
+
+      const firstSegment = route.segments[0];
+      if (!firstSegment || firstSegment.error) continue;
+
+      expect(
+        route.startTime === firstSegment.departureTime,
+        `Route "${route.name}" startTime (${route.startTime}) doesn't match first segment departureTime (${firstSegment.departureTime})`
+      ).toBe(true);
+    }
+  }, 30000);
+
+  it('should have totalDurationSeconds matching time from startTime to eta', async () => {
+    const response = await fetch(`${API_URL}?direction=toOffice`);
+    const data: CommuteResponse = await response.json();
+
+    for (const route of data.routes) {
+      if (route.hasError) continue;
+      if (!route.startTime || !route.eta || !route.totalDurationSeconds) continue;
+
+      const startDate = new Date(route.startTime);
+      const etaDate = new Date(route.eta);
+      const calculatedSeconds = Math.round((etaDate.getTime() - startDate.getTime()) / 1000);
+
+      // Allow 2 second tolerance for rounding
+      expect(
+        Math.abs(calculatedSeconds - route.totalDurationSeconds) <= 2,
+        `Route "${route.name}" totalDurationSeconds (${route.totalDurationSeconds}) doesn't match calculated (${calculatedSeconds})`
+      ).toBe(true);
     }
   }, 30000);
 });
