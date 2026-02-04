@@ -708,16 +708,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     currentTime = sd.fixedDepartureTime;
                 }
 
-                // Set departure time as ISO 8601 UTC
-                segment.departureTime = currentTime.toISOString();
-
-                // Calculate arrival time
-                const durationMins = parseDurationToMinutes(segment.duration);
-                const arrivalDate = new Date(currentTime.getTime() + durationMins * 60000);
-                segment.arrivalTime = arrivalDate.toISOString();
-
-                // Advance current time to arrival
-                currentTime = arrivalDate;
+                // For transit/bus with actual times from Google, use those times
+                // For drive/walk, calculate based on currentTime
+                if (sd.fixedDepartureTime && sd.segment.departureDate && sd.segment.arrivalDate) {
+                    // Use actual times from Google
+                    segment.departureTime = sd.segment.departureDate.toISOString();
+                    segment.arrivalTime = sd.segment.arrivalDate.toISOString();
+                    currentTime = sd.segment.arrivalDate;
+                } else {
+                    // Calculate times for drive/walk segments
+                    segment.departureTime = currentTime.toISOString();
+                    const durationMins = parseDurationToMinutes(segment.duration);
+                    const arrivalDate = new Date(currentTime.getTime() + durationMins * 60000);
+                    segment.arrivalTime = arrivalDate.toISOString();
+                    currentTime = arrivalDate;
+                }
 
                 segments.push(segment);
             }
