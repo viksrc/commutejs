@@ -32,6 +32,7 @@ interface CommuteResponse {
     direction: 'toOffice' | 'toHome';
     lastUpdated: string;
     routes: RouteOption[];
+    _version?: string;
 }
 
 // ============ LOCATIONS ============
@@ -811,7 +812,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Only mark best if it doesn't have an error
         if (routes.length > 0 && !routes[0].hasError) routes[0].isBest = true;
 
-        const response: CommuteResponse = { direction: direction as 'toOffice' | 'toHome', lastUpdated: new Date().toISOString(), routes };
+        const response: CommuteResponse = { direction: direction as 'toOffice' | 'toHome', lastUpdated: new Date().toISOString(), routes, _version: 'v1.3.1-fix-train-times' };
         res.status(200).json(response);
     } catch (error) {
         console.error('API Error:', error);
