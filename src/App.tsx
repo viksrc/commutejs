@@ -7,7 +7,7 @@ import { useState, useEffect } from 'react';
 import { LOCATIONS } from './config/locations';
 import { getSchedule } from './services/lakelandBusService';
 
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 
 // Types for commute data - times are ISO 8601 UTC from API
 type CommuteSegment = {
