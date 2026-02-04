@@ -32,7 +32,6 @@ interface CommuteResponse {
     direction: 'toOffice' | 'toHome';
     lastUpdated: string;
     routes: RouteOption[];
-    _version?: string;
 }
 
 // ============ LOCATIONS ============
@@ -711,16 +710,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
                 // For transit/bus with actual times from Google, use those times
                 // For drive/walk, calculate based on currentTime
-                const hasFixedDep = !!sd.fixedDepartureTime;
-                const hasDepDate = !!(sd.segment as any).departureDate;
-                const hasArrDate = !!(sd.segment as any).arrivalDate;
-                (segment as any)._debug = { hasFixedDep, hasDepDate, hasArrDate, segType: sd.segConfig.type };
-
-                if (hasFixedDep && hasDepDate && hasArrDate) {
+                if (sd.fixedDepartureTime && sd.segment.departureDate && sd.segment.arrivalDate) {
                     // Use actual times from Google
-                    segment.departureTime = ((sd.segment as any).departureDate as Date).toISOString();
-                    segment.arrivalTime = ((sd.segment as any).arrivalDate as Date).toISOString();
-                    currentTime = (sd.segment as any).arrivalDate as Date;
+                    segment.departureTime = sd.segment.departureDate.toISOString();
+                    segment.arrivalTime = sd.segment.arrivalDate.toISOString();
+                    currentTime = sd.segment.arrivalDate;
                 } else {
                     // Calculate times for drive/walk segments
                     segment.departureTime = currentTime.toISOString();
@@ -759,8 +753,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         continue; // Can't shift, would be before requested time
                     }
 
-                    // Shift all segments before the transit
+                    // Shift segments before the transit, but NOT transit/bus with fixed schedules
                     for (let j = 0; j < i; j++) {
+                        // Skip segments with fixed departure times (transit/bus) - they have real schedules
+                        if (segmentData[j].fixedDepartureTime) {
+                            continue;
+                        }
                         if (segments[j].departureTime) {
                             const oldDep = new Date(segments[j].departureTime!);
                             segments[j].departureTime = new Date(oldDep.getTime() + shiftMs).toISOString();
@@ -817,7 +815,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Only mark best if it doesn't have an error
         if (routes.length > 0 && !routes[0].hasError) routes[0].isBest = true;
 
-        const response: CommuteResponse = { direction: direction as 'toOffice' | 'toHome', lastUpdated: new Date().toISOString(), routes, _version: 'v1.3.1-fix-train-times' };
+        const response: CommuteResponse = { direction: direction as 'toOffice' | 'toHome', lastUpdated: new Date().toISOString(), routes };
         res.status(200).json(response);
     } catch (error) {
         console.error('API Error:', error);
