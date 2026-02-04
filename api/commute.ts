@@ -724,6 +724,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     currentTime = arrivalDate;
                 }
 
+                // Remove internal Date objects before adding to response
+                delete (segment as any).departureDate;
+                delete (segment as any).arrivalDate;
                 segments.push(segment);
             }
 
