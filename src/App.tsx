@@ -442,7 +442,14 @@ function App() {
                 <div
                   key={routeIndex}
                   className={`route-card ${route.isBest ? 'best' : ''}`}
-                  onClick={() => toggleRouteExpansion(routeIndex)}
+                  onClick={() => {
+                    // Don't toggle if user is selecting text
+                    const selection = window.getSelection();
+                    if (selection && selection.toString().length > 0) {
+                      return;
+                    }
+                    toggleRouteExpansion(routeIndex);
+                  }}
                 >
                   {/* Route Header */}
                   <div className="route-header">
