@@ -506,9 +506,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     try {
         const routesConfig = ROUTES_CONFIG[direction];
-        const routes: RouteOption[] = [];
 
-        for (const routeConfig of routesConfig) {
+        const routePromises = routesConfig.map(async (routeConfig) => {
             let skipRoute = false;
 
             // === PASS 1: Collect all segments with durations (times not yet set) ===
@@ -598,7 +597,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 }
             }
 
-            if (skipRoute || segmentData.length === 0) continue;
+            if (skipRoute || segmentData.length === 0) return null;
 
             // === PASS 2: Find LAST fixed transit and work backwards ===
             // This ensures we catch the right connections by re-querying earlier transits with arrival constraints
@@ -766,7 +765,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             if (segments.length > 0) {
                 if (routeHasError) {
                     // Route has errors - don't show totalTime or eta
-                    routes.push({ name: routeConfig.name, segments, hasError: true, isBest: false });
+                    return { name: routeConfig.name, segments, hasError: true, isBest: false } as RouteOption;
                 } else {
                     let totalSeconds = 0;
                     const routeStartTime = segments[0].departureTime;
@@ -778,7 +777,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         totalSeconds = Math.round((endDate.getTime() - startDate.getTime()) / 1000);
                         if (totalSeconds < 0) totalSeconds += 86400; // Add 24 hours if negative
                     }
-                    routes.push({
+                    return {
                         name: routeConfig.name,
                         segments,
                         totalTime: formatDuration(Math.round(totalSeconds / 60)),
@@ -786,10 +785,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         startTime: routeStartTime,
                         eta: routeEta || 'Unknown',
                         isBest: false
-                    });
+                    } as RouteOption;
                 }
             }
-        }
+            return null;
+        });
+
+        const routes = (await Promise.all(routePromises)).filter((r): r is RouteOption => r !== null);
 
         // Sort routes: valid routes by ETA (earliest arrival first), error routes at end
         routes.sort((a, b) => {
