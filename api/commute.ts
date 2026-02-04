@@ -423,6 +423,237 @@ async function findNextBus(arrivalTimeUTC: Date, direction: 'eastbound' | 'westb
     return null;
 }
 
+// ============ PARALLEL ROUTE PROCESSING ============
+
+/**
+ * Pre-fetch all drive segment data in parallel
+ * Returns a Map of segment index -> fetched data (or null if failed)
+ */
+async function prefetchDriveSegments(
+    segments: SegmentConfig[]
+): Promise<Map<number, Partial<CommuteSegment> | null>> {
+    const driveSegments = segments
+        .map((seg, idx) => ({ seg, idx }))
+        .filter(({ seg }) => seg.type === 'drive');
+
+    const results = await Promise.all(
+        driveSegments.map(async ({ seg, idx }) => {
+            if (seg.type === 'drive') {
+                const result = await fetchDrivingDirections(
+                    LOCATIONS[seg.from].address,
+                    LOCATIONS[seg.to].address
+                );
+                return { idx, result };
+            }
+            return { idx, result: null };
+        })
+    );
+
+    const prefetchedData = new Map<number, Partial<CommuteSegment> | null>();
+    for (const { idx, result } of results) {
+        prefetchedData.set(idx, result);
+    }
+
+    return prefetchedData;
+}
+
+/**
+ * Process a single route configuration and return a RouteOption
+ * Uses pre-fetched drive data when available to avoid redundant API calls
+ */
+async function processRoute(routeConfig: RouteConfig): Promise<RouteOption> {
+    // Pre-fetch all drive segments in parallel
+    const prefetchedDriveData = await prefetchDriveSegments(routeConfig.segments);
+
+    // === PASS 1: Collect all segments with durations (times not yet set) ===
+    interface SegmentData {
+        segment: Omit<CommuteSegment, 'departureTime' | 'arrivalTime'> & {
+            departureTime?: string;
+            arrivalTime?: string;
+            error?: string;
+            departureDate?: Date;
+            arrivalDate?: Date;
+        };
+        fixedDepartureTime?: Date;
+        hasError?: boolean;
+    }
+    const segmentData: SegmentData[] = [];
+    let currentCommuteTime = new Date();
+    let routeHasError = false;
+
+    for (let segIdx = 0; segIdx < routeConfig.segments.length; segIdx++) {
+        const segConfig = routeConfig.segments[segIdx];
+        let segment: (Partial<CommuteSegment> & { departureDate?: Date; arrivalDate?: Date }) | null = null;
+        let fixedDepartureTime: Date | undefined;
+        let segmentHasError = false;
+
+        if (segConfig.type === 'drive') {
+            // Use pre-fetched data instead of making another API call
+            const driveRes = prefetchedDriveData.get(segIdx);
+            if (driveRes) {
+                segment = { ...driveRes, mode: 'drive', from: segConfig.fromLabel, to: segConfig.toLabel };
+            } else {
+                segment = { mode: 'drive', from: segConfig.fromLabel, to: segConfig.toLabel, duration: '-', error: 'Google API error' };
+                segmentHasError = true;
+                routeHasError = true;
+            }
+        } else if (segConfig.type === 'walk') {
+            segment = { mode: 'walk', from: segConfig.fromLabel, to: segConfig.toLabel, duration: segConfig.duration, distance: '-', traffic: 'Walk' };
+        } else if (segConfig.type === 'transit') {
+            const transitRes = await fetchTransitDirections(
+                LOCATIONS[segConfig.from].address,
+                LOCATIONS[segConfig.to].address,
+                currentCommuteTime
+            );
+            if (transitRes) {
+                segment = { ...transitRes, mode: segConfig.mode, from: segConfig.fromLabel, to: segConfig.toLabel };
+                if (transitRes.departureTime) {
+                    fixedDepartureTime = parseTimeToDate(transitRes.departureTime) || undefined;
+                }
+            } else {
+                segment = { mode: segConfig.mode, from: segConfig.fromLabel, to: segConfig.toLabel, duration: '-', error: 'Google API error' };
+                segmentHasError = true;
+                routeHasError = true;
+            }
+        } else if (segConfig.type === 'bus') {
+            const nextBus = await findNextBus(currentCommuteTime, segConfig.direction);
+            if (nextBus) {
+                // Use pre-fetched drive data for bus route duration estimate
+                const driveRes = prefetchedDriveData.get(segIdx) ||
+                    await fetchDrivingDirections(LOCATIONS[segConfig.from].address, LOCATIONS[segConfig.to].address);
+                const busDuration = driveRes?.duration || '45m';
+                const busDepDate = new Date(nextBus.departureTime);
+                const busDepDisplay = formatTimeToAMPM(busDepDate);
+                const busArrDate = new Date(busDepDate.getTime() + parseDurationToMinutes(busDuration) * 60000);
+                segment = {
+                    mode: 'bus', from: segConfig.fromLabel, to: segConfig.toLabel, duration: busDuration,
+                    distance: driveRes?.distance || '30 mi', traffic: `Departs ${busDepDisplay}`,
+                    departureTime: busDepDate.toISOString(), arrivalTime: busArrDate.toISOString()
+                };
+                fixedDepartureTime = busDepDate;
+            } else {
+                segment = { mode: 'bus', from: segConfig.fromLabel, to: segConfig.toLabel, duration: '-', error: 'Lakeland API error' };
+                segmentHasError = true;
+                routeHasError = true;
+            }
+        }
+
+        if (segment) {
+            segmentData.push({ segment: segment as CommuteSegment, fixedDepartureTime, hasError: segmentHasError });
+            if (!segmentHasError && segment.duration && segment.duration !== '-') {
+                if (segment.arrivalDate) {
+                    currentCommuteTime = segment.arrivalDate;
+                } else if (fixedDepartureTime) {
+                    const durationMins = parseDurationToMinutes(segment.duration);
+                    currentCommuteTime = new Date(fixedDepartureTime.getTime() + durationMins * 60000);
+                } else {
+                    const durationMins = parseDurationToMinutes(segment.duration);
+                    currentCommuteTime = new Date(currentCommuteTime.getTime() + durationMins * 60000);
+                }
+            }
+        }
+    }
+
+    if (segmentData.length === 0) {
+        return { name: routeConfig.name, segments: [], hasError: true, isBest: false };
+    }
+
+    // === PASS 2: Find first fixed transit time and calculate backwards ===
+    let firstFixedTransitIndex = -1;
+    let firstFixedTransitTime: Date | null = null;
+
+    for (let i = 0; i < segmentData.length; i++) {
+        if (segmentData[i].fixedDepartureTime) {
+            firstFixedTransitIndex = i;
+            firstFixedTransitTime = segmentData[i].fixedDepartureTime!;
+            break;
+        }
+    }
+
+    let idealStartTime: Date;
+    if (firstFixedTransitTime && firstFixedTransitIndex > 0) {
+        let timeToReachTransit = 0;
+        for (let i = 0; i < firstFixedTransitIndex; i++) {
+            timeToReachTransit += parseDurationToMinutes(segmentData[i].segment.duration);
+        }
+        idealStartTime = new Date(firstFixedTransitTime.getTime() - timeToReachTransit * 60000);
+    } else {
+        idealStartTime = new Date();
+    }
+
+    // === PASS 3: Assign times to all segments starting from idealStartTime ===
+    const segments: CommuteSegment[] = [];
+    let currentTime = idealStartTime;
+
+    for (let i = 0; i < segmentData.length; i++) {
+        const sd = segmentData[i];
+        const segment = { ...sd.segment } as CommuteSegment;
+
+        if (sd.hasError) {
+            delete segment.departureTime;
+            delete segment.arrivalTime;
+            segments.push(segment);
+            continue;
+        }
+
+        if (sd.fixedDepartureTime && sd.fixedDepartureTime > currentTime) {
+            currentTime = sd.fixedDepartureTime;
+        }
+
+        segment.departureTime = currentTime.toISOString();
+        const durationMins = parseDurationToMinutes(segment.duration);
+        const arrivalDate = new Date(currentTime.getTime() + durationMins * 60000);
+        segment.arrivalTime = arrivalDate.toISOString();
+        currentTime = arrivalDate;
+
+        segments.push(segment);
+    }
+
+    if (routeHasError) {
+        return { name: routeConfig.name, segments, hasError: true, isBest: false };
+    }
+
+    let totalMinutes = 0;
+    if (segments[0].departureTime && segments[segments.length - 1].arrivalTime) {
+        const startTime = new Date(segments[0].departureTime);
+        const endTime = new Date(segments[segments.length - 1].arrivalTime);
+        totalMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
+        if (totalMinutes < 0) totalMinutes += 1440;
+    }
+
+    return {
+        name: routeConfig.name,
+        segments,
+        totalTime: formatDuration(totalMinutes),
+        eta: segments[segments.length - 1].arrivalTime || 'Unknown',
+        isBest: false
+    };
+}
+
+/**
+ * Process all routes in parallel using Promise.all
+ */
+async function processAllRoutesInParallel(routeConfigs: RouteConfig[]): Promise<RouteOption[]> {
+    const routes = await Promise.all(
+        routeConfigs.map(config => processRoute(config))
+    );
+
+    // Sort routes: valid routes by duration, error routes at end
+    routes.sort((a, b) => {
+        if (a.hasError && !b.hasError) return 1;
+        if (!a.hasError && b.hasError) return -1;
+        if (a.hasError && b.hasError) return 0;
+        return parseDurationToMinutes(a.totalTime || '0m') - parseDurationToMinutes(b.totalTime || '0m');
+    });
+
+    // Mark best route (first non-error route)
+    if (routes.length > 0 && !routes[0].hasError) {
+        routes[0].isBest = true;
+    }
+
+    return routes;
+}
+
 // ============ HANDLER ============
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { direction } = req.query;
@@ -433,190 +664,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     try {
         const routesConfig = ROUTES_CONFIG[direction];
-        const routes: RouteOption[] = [];
 
-        for (const routeConfig of routesConfig) {
-            let skipRoute = false;
+        // Process all routes in parallel for better performance
+        const routes = await processAllRoutesInParallel(routesConfig);
 
-            // === PASS 1: Collect all segments with durations (times not yet set) ===
-            interface SegmentData {
-                segment: Omit<CommuteSegment, 'departureTime' | 'arrivalTime'> & { departureTime?: string; arrivalTime?: string; error?: string; departureDate?: Date; arrivalDate?: Date };
-                fixedDepartureTime?: Date; // For transit/bus segments with schedules
-                hasError?: boolean;
-            }
-            const segmentData: SegmentData[] = [];
-            let currentCommuteTime = new Date(); // Running absolute time
-            let routeHasError = false;
-
-            for (const segConfig of routeConfig.segments) {
-                if (skipRoute) break;
-                let segment: (Partial<CommuteSegment> & { departureDate?: Date; arrivalDate?: Date }) | null = null;
-                let fixedDepartureTime: Date | undefined;
-                let segmentHasError = false;
-
-                if (segConfig.type === 'drive') {
-                    const driveRes = await fetchDrivingDirections(LOCATIONS[segConfig.from].address, LOCATIONS[segConfig.to].address);
-                    if (driveRes) {
-                        segment = { ...driveRes, mode: 'drive', from: segConfig.fromLabel, to: segConfig.toLabel };
-                    } else {
-                        segment = { mode: 'drive', from: segConfig.fromLabel, to: segConfig.toLabel, duration: '-', error: 'Google API error' };
-                        segmentHasError = true;
-                        routeHasError = true;
-                    }
-                } else if (segConfig.type === 'walk') {
-                    segment = { mode: 'walk', from: segConfig.fromLabel, to: segConfig.toLabel, duration: segConfig.duration, distance: '-', traffic: 'Walk' };
-                } else if (segConfig.type === 'transit') {
-                    // Query Google with the arrival time at this point
-                    const transitRes = await fetchTransitDirections(
-                        LOCATIONS[segConfig.from].address,
-                        LOCATIONS[segConfig.to].address,
-                        currentCommuteTime
-                    );
-                    if (transitRes) {
-                        segment = { ...transitRes, mode: segConfig.mode, from: segConfig.fromLabel, to: segConfig.toLabel };
-                        // Parse the fixed departure time from transit schedule
-                        if (transitRes.departureTime) {
-                            fixedDepartureTime = parseTimeToDate(transitRes.departureTime) || undefined;
-                        }
-                    } else {
-                        segment = { mode: segConfig.mode, from: segConfig.fromLabel, to: segConfig.toLabel, duration: '-', error: 'Google API error' };
-                        segmentHasError = true;
-                        routeHasError = true;
-                    }
-                } else if (segConfig.type === 'bus') {
-                    const nextBus = await findNextBus(currentCommuteTime, segConfig.direction);
-                    if (nextBus) {
-                        const driveRes = await fetchDrivingDirections(LOCATIONS[segConfig.from].address, LOCATIONS[segConfig.to].address);
-                        const busDuration = driveRes?.duration || '45m';
-                        // nextBus.departureTime is now ISO 8601 UTC string
-                        const busDepDate = new Date(nextBus.departureTime);
-                        const busDepDisplay = formatTimeToAMPM(busDepDate);
-                        const busArrDate = new Date(busDepDate.getTime() + parseDurationToMinutes(busDuration) * 60000);
-                        segment = {
-                            mode: 'bus', from: segConfig.fromLabel, to: segConfig.toLabel, duration: busDuration,
-                            distance: driveRes?.distance || '30 mi', traffic: `Departs ${busDepDisplay}`,
-                            // Return ISO 8601 UTC strings
-                            departureTime: busDepDate.toISOString(), arrivalTime: busArrDate.toISOString()
-                        };
-                        fixedDepartureTime = busDepDate;
-                    } else {
-                        segment = { mode: 'bus', from: segConfig.fromLabel, to: segConfig.toLabel, duration: '-', error: 'Lakeland API error' };
-                        segmentHasError = true;
-                        routeHasError = true;
-                    }
-                }
-
-                if (segment) {
-                    segmentData.push({ segment: segment as CommuteSegment, fixedDepartureTime, hasError: segmentHasError });
-                    if (!segmentHasError && segment.duration && segment.duration !== '-') {
-                        // Update absolute currentCommuteTime
-                        if (segment.arrivalDate) {
-                            currentCommuteTime = segment.arrivalDate;
-                        } else if (fixedDepartureTime) {
-                            const durationMins = parseDurationToMinutes(segment.duration);
-                            currentCommuteTime = new Date(fixedDepartureTime.getTime() + durationMins * 60000);
-                        } else {
-                            const durationMins = parseDurationToMinutes(segment.duration);
-                            currentCommuteTime = new Date(currentCommuteTime.getTime() + durationMins * 60000);
-                        }
-                    }
-                }
-            }
-
-            if (skipRoute || segmentData.length === 0) continue;
-
-            // === PASS 2: Find first fixed transit time and calculate backwards ===
-            let firstFixedTransitIndex = -1;
-            let firstFixedTransitTime: Date | null = null;
-
-            for (let i = 0; i < segmentData.length; i++) {
-                if (segmentData[i].fixedDepartureTime) {
-                    firstFixedTransitIndex = i;
-                    firstFixedTransitTime = segmentData[i].fixedDepartureTime!;
-                    break;
-                }
-            }
-
-            // Calculate the ideal start time by working backwards from the first transit
-            let idealStartTime: Date;
-            if (firstFixedTransitTime && firstFixedTransitIndex > 0) {
-                // Sum up durations of all segments BEFORE the first transit
-                let timeToReachTransit = 0;
-                for (let i = 0; i < firstFixedTransitIndex; i++) {
-                    timeToReachTransit += parseDurationToMinutes(segmentData[i].segment.duration);
-                }
-                // Start time = transit departure - time to reach it
-                idealStartTime = new Date(firstFixedTransitTime.getTime() - timeToReachTransit * 60000);
-            } else {
-                // No fixed transit, just start now
-                idealStartTime = new Date();
-            }
-
-            // === PASS 3: Assign times to all segments starting from idealStartTime ===
-            const segments: CommuteSegment[] = [];
-            let currentTime = idealStartTime;
-
-            for (let i = 0; i < segmentData.length; i++) {
-                const sd = segmentData[i];
-                const segment = { ...sd.segment } as CommuteSegment;
-
-                // Skip time assignment for error segments
-                if (sd.hasError) {
-                    delete segment.departureTime;
-                    delete segment.arrivalTime;
-                    segments.push(segment);
-                    continue;
-                }
-
-                // Check if this segment has a fixed scheduled departure (transit/bus)
-                if (sd.fixedDepartureTime && sd.fixedDepartureTime > currentTime) {
-                    // There's a wait - the transit doesn't leave until the scheduled time
-                    currentTime = sd.fixedDepartureTime;
-                }
-
-                // Set departure time as ISO 8601 UTC
-                segment.departureTime = currentTime.toISOString();
-
-                // Calculate arrival time
-                const durationMins = parseDurationToMinutes(segment.duration);
-                const arrivalDate = new Date(currentTime.getTime() + durationMins * 60000);
-                segment.arrivalTime = arrivalDate.toISOString();
-
-                // Advance current time to arrival
-                currentTime = arrivalDate;
-
-                segments.push(segment);
-            }
-
-            if (segments.length > 0) {
-                if (routeHasError) {
-                    // Route has errors - don't show totalTime or eta
-                    routes.push({ name: routeConfig.name, segments, hasError: true, isBest: false });
-                } else {
-                    let totalMinutes = 0;
-                    if (segments[0].departureTime && segments[segments.length - 1].arrivalTime) {
-                        // Times are now ISO 8601, use Date objects for calculation
-                        const startTime = new Date(segments[0].departureTime);
-                        const endTime = new Date(segments[segments.length - 1].arrivalTime);
-                        totalMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
-                        if (totalMinutes < 0) totalMinutes += 1440;
-                    }
-                    routes.push({ name: routeConfig.name, segments, totalTime: formatDuration(totalMinutes), eta: segments[segments.length - 1].arrivalTime || 'Unknown', isBest: false });
-                }
-            }
-        }
-
-        // Sort routes: valid routes by duration, error routes at end
-        routes.sort((a, b) => {
-            if (a.hasError && !b.hasError) return 1;
-            if (!a.hasError && b.hasError) return -1;
-            if (a.hasError && b.hasError) return 0;
-            return parseDurationToMinutes(a.totalTime || '0m') - parseDurationToMinutes(b.totalTime || '0m');
-        });
-        // Only mark best if it doesn't have an error
-        if (routes.length > 0 && !routes[0].hasError) routes[0].isBest = true;
-
-        const response: CommuteResponse = { direction: direction as 'toOffice' | 'toHome', lastUpdated: new Date().toISOString(), routes };
+        const response: CommuteResponse = {
+            direction: direction as 'toOffice' | 'toHome',
+            lastUpdated: new Date().toISOString(),
+            routes
+        };
         res.status(200).json(response);
     } catch (error) {
         console.error('API Error:', error);
