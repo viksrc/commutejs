@@ -507,8 +507,9 @@ async function processRoute(routeConfig: RouteConfig): Promise<RouteOption> {
             );
             if (transitRes) {
                 segment = { ...transitRes, mode: segConfig.mode, from: segConfig.fromLabel, to: segConfig.toLabel };
-                if (transitRes.departureTime) {
-                    fixedDepartureTime = parseTimeToDate(transitRes.departureTime) || undefined;
+                // Use departureDate directly (Date object) instead of parsing the ISO string
+                if ((transitRes as any).departureDate) {
+                    fixedDepartureTime = (transitRes as any).departureDate;
                 }
             } else {
                 segment = { mode: segConfig.mode, from: segConfig.fromLabel, to: segConfig.toLabel, duration: '-', error: 'Google API error' };
