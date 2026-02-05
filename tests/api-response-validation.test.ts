@@ -261,4 +261,120 @@ describe('Vercel API Response Validation', () => {
       ).toBe(true);
     }
   }, 30000);
+
+  // ============ TIMING INTEGRITY TESTS ============
+
+  it('should have sequential segment times for toOffice routes (no segment starts before previous ends)', async () => {
+    const response = await fetch(`${API_URL}?direction=toOffice`);
+    const data: CommuteResponse = await response.json();
+
+    for (const route of data.routes) {
+      if (route.hasError) continue;
+
+      for (let i = 1; i < route.segments.length; i++) {
+        const prevSegment = route.segments[i - 1];
+        const currSegment = route.segments[i];
+
+        // Skip if either segment has an error or missing times
+        if (prevSegment.error || currSegment.error) continue;
+        if (!prevSegment.arrivalTime || !currSegment.departureTime) continue;
+
+        const prevArrival = new Date(prevSegment.arrivalTime).getTime();
+        const currDeparture = new Date(currSegment.departureTime).getTime();
+
+        expect(
+          currDeparture >= prevArrival,
+          `Route "${route.name}": Segment "${currSegment.from} → ${currSegment.to}" departs at ${currSegment.departureTime} ` +
+          `but previous segment "${prevSegment.from} → ${prevSegment.to}" arrives at ${prevSegment.arrivalTime}`
+        ).toBe(true);
+      }
+    }
+  }, 30000);
+
+  it('should have sequential segment times for toHome routes (no segment starts before previous ends)', async () => {
+    const response = await fetch(`${API_URL}?direction=toHome`);
+    const data: CommuteResponse = await response.json();
+
+    for (const route of data.routes) {
+      if (route.hasError) continue;
+
+      for (let i = 1; i < route.segments.length; i++) {
+        const prevSegment = route.segments[i - 1];
+        const currSegment = route.segments[i];
+
+        // Skip if either segment has an error or missing times
+        if (prevSegment.error || currSegment.error) continue;
+        if (!prevSegment.arrivalTime || !currSegment.departureTime) continue;
+
+        const prevArrival = new Date(prevSegment.arrivalTime).getTime();
+        const currDeparture = new Date(currSegment.departureTime).getTime();
+
+        expect(
+          currDeparture >= prevArrival,
+          `Route "${route.name}": Segment "${currSegment.from} → ${currSegment.to}" departs at ${currSegment.departureTime} ` +
+          `but previous segment "${prevSegment.from} → ${prevSegment.to}" arrives at ${prevSegment.arrivalTime}`
+        ).toBe(true);
+      }
+    }
+  }, 30000);
+
+  it('should have total duration matching first departure to last arrival for toOffice routes', async () => {
+    const response = await fetch(`${API_URL}?direction=toOffice`);
+    const data: CommuteResponse = await response.json();
+
+    for (const route of data.routes) {
+      if (route.hasError) continue;
+      if (route.segments.length === 0) continue;
+
+      const firstSegment = route.segments[0];
+      const lastSegment = route.segments[route.segments.length - 1];
+
+      // Skip if segments have errors or missing times
+      if (firstSegment.error || lastSegment.error) continue;
+      if (!firstSegment.departureTime || !lastSegment.arrivalTime) continue;
+
+      const firstDeparture = new Date(firstSegment.departureTime).getTime();
+      const lastArrival = new Date(lastSegment.arrivalTime).getTime();
+      const actualDurationSeconds = Math.round((lastArrival - firstDeparture) / 1000);
+
+      if (route.totalDurationSeconds) {
+        // Allow 60 second tolerance for rounding differences
+        expect(
+          Math.abs(actualDurationSeconds - route.totalDurationSeconds) <= 60,
+          `Route "${route.name}": totalDurationSeconds (${route.totalDurationSeconds}s) doesn't match ` +
+          `actual span from ${firstSegment.departureTime} to ${lastSegment.arrivalTime} (${actualDurationSeconds}s)`
+        ).toBe(true);
+      }
+    }
+  }, 30000);
+
+  it('should have total duration matching first departure to last arrival for toHome routes', async () => {
+    const response = await fetch(`${API_URL}?direction=toHome`);
+    const data: CommuteResponse = await response.json();
+
+    for (const route of data.routes) {
+      if (route.hasError) continue;
+      if (route.segments.length === 0) continue;
+
+      const firstSegment = route.segments[0];
+      const lastSegment = route.segments[route.segments.length - 1];
+
+      // Skip if segments have errors or missing times
+      if (firstSegment.error || lastSegment.error) continue;
+      if (!firstSegment.departureTime || !lastSegment.arrivalTime) continue;
+
+      const firstDeparture = new Date(firstSegment.departureTime).getTime();
+      const lastArrival = new Date(lastSegment.arrivalTime).getTime();
+      const actualDurationSeconds = Math.round((lastArrival - firstDeparture) / 1000);
+
+      if (route.totalDurationSeconds) {
+        // Allow 60 second tolerance for rounding differences
+        expect(
+          Math.abs(actualDurationSeconds - route.totalDurationSeconds) <= 60,
+          `Route "${route.name}": totalDurationSeconds (${route.totalDurationSeconds}s) doesn't match ` +
+          `actual span from ${firstSegment.departureTime} to ${lastSegment.arrivalTime} (${actualDurationSeconds}s)`
+        ).toBe(true);
+      }
+    }
+  }, 30000);
 });
