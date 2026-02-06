@@ -35,16 +35,16 @@ interface CommuteResponse {
 }
 
 // ============ LOCATIONS ============
-const LOCATIONS: Record<string, { name: string; shortName: string; address: string }> = {
+const LOCATIONS: Record<string, { name: string; shortName: string; address: string; coords?: { lat: number; lng: number } }> = {
     home: { name: 'Home', shortName: 'Home', address: '411 Mountainway, Morris Plains, NJ' },
     harrisonParking: { name: 'Harrison Parking', shortName: 'Harrison P', address: 'Guyon St Parking Lot, Harrison, NJ' },
-    harrisonPath: { name: 'Harrison PATH', shortName: 'Harrison', address: 'Harrison PATH Station, Harrison, NJ' },
-    morrisPlainsStation: { name: 'Morris Plains Station', shortName: 'Morris Plains', address: 'Morris Plains Station, Morris Plains, NJ' },
-    hobokenStation: { name: 'Hoboken Terminal', shortName: 'Hoboken', address: 'Hoboken Terminal, Hoboken, NJ' },
-    nyPennStation: { name: 'NY Penn Station', shortName: 'Penn Station', address: 'Pennsylvania Station, New York, NY' },
+    harrisonPath: { name: 'Harrison PATH', shortName: 'Harrison', address: 'Harrison PATH Station, Harrison, NJ', coords: { lat: 40.7394, lng: -74.15587 } },
+    morrisPlainsStation: { name: 'Morris Plains Station', shortName: 'Morris Plains', address: 'Morris Plains Station, Morris Plains, NJ', coords: { lat: 40.82864, lng: -74.4782 } },
+    hobokenStation: { name: 'Hoboken Terminal', shortName: 'Hoboken', address: 'Hoboken Terminal, Hoboken, NJ', coords: { lat: 40.7349, lng: -74.02759 } },
+    nyPennStation: { name: 'NY Penn Station', shortName: 'Penn Station', address: 'Pennsylvania Station, New York, NY', coords: { lat: 40.750374, lng: -73.991058 } },
     waterviewParkRide: { name: 'Waterview Blvd Park & Ride', shortName: 'Waterview P&R', address: 'Waterview Blvd Park and Ride, Parsippany, NJ' },
-    portAuthority: { name: 'Port Authority Bus Terminal', shortName: 'Port Authority', address: '625 8th Ave, New York, NY' },
-    wtcPath: { name: 'WTC PATH', shortName: 'WTC PATH', address: 'World Trade Center PATH Station, New York, NY' },
+    portAuthority: { name: 'Port Authority Bus Terminal', shortName: 'Port Authority', address: '625 8th Ave, New York, NY', coords: { lat: 40.757309, lng: -73.989738 } },
+    wtcPath: { name: 'WTC PATH', shortName: 'WTC PATH', address: 'World Trade Center PATH Station, New York, NY', coords: { lat: 40.71271, lng: -74.01193 } },
     office: { name: 'Office', shortName: 'Office', address: '200 West St, New York, NY 10282' },
 };
 
@@ -204,7 +204,12 @@ async function fetchDrivingDirections(origin: string, destination: string): Prom
 
 type TransitResult = Partial<CommuteSegment> & { departureDate?: Date; arrivalDate?: Date };
 
-async function fetchTransitDirections(origin: string, destination: string, departureTime?: Date, mode?: 'train' | 'path'): Promise<TransitResult | null> {
+function toRouteLocation(loc: { address: string; coords?: { lat: number; lng: number } }): any {
+    if (loc.coords) return { location: { latLng: { latitude: loc.coords.lat, longitude: loc.coords.lng } } };
+    return { address: loc.address };
+}
+
+async function fetchTransitDirections(origin: string, destination: string, departureTime?: Date, mode?: 'train' | 'path', originLoc?: typeof LOCATIONS[string], destLoc?: typeof LOCATIONS[string]): Promise<TransitResult | null> {
     if (!GOOGLE_MAPS_API_KEY) throw new Error('Missing Google Maps API Key');
 
     // Filter allowed transit modes based on segment mode
@@ -221,8 +226,8 @@ async function fetchTransitDirections(origin: string, destination: string, depar
     }
 
     const requestBody: any = {
-        origin: { address: origin },
-        destination: { address: destination },
+        origin: originLoc ? toRouteLocation(originLoc) : { address: origin },
+        destination: destLoc ? toRouteLocation(destLoc) : { address: destination },
         travelMode: 'TRANSIT',
         computeAlternativeRoutes: true,
         transitPreferences: { allowedTravelModes: allowedModes },
@@ -329,7 +334,7 @@ async function fetchTransitDirections(origin: string, destination: string, depar
  * Fetch transit directions with ARRIVAL time constraint (for backward calculation)
  * Returns the latest departure that arrives by the specified time
  */
-async function fetchTransitDirectionsWithArrival(origin: string, destination: string, arrivalTime: Date, mode?: 'train' | 'path'): Promise<TransitResult | null> {
+async function fetchTransitDirectionsWithArrival(origin: string, destination: string, arrivalTime: Date, mode?: 'train' | 'path', originLoc?: typeof LOCATIONS[string], destLoc?: typeof LOCATIONS[string]): Promise<TransitResult | null> {
     if (!GOOGLE_MAPS_API_KEY) throw new Error('Missing Google Maps API Key');
 
     // Filter allowed transit modes based on segment mode
@@ -343,8 +348,8 @@ async function fetchTransitDirectionsWithArrival(origin: string, destination: st
     }
 
     const requestBody: any = {
-        origin: { address: origin },
-        destination: { address: destination },
+        origin: originLoc ? toRouteLocation(originLoc) : { address: origin },
+        destination: destLoc ? toRouteLocation(destLoc) : { address: destination },
         travelMode: 'TRANSIT',
         computeAlternativeRoutes: true,
         transitPreferences: { allowedTravelModes: allowedModes },
@@ -572,7 +577,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         LOCATIONS[segConfig.from].address,
                         LOCATIONS[segConfig.to].address,
                         currentCommuteTime,
-                        segConfig.mode // Pass mode to filter transit types (train vs path)
+                        segConfig.mode, // Pass mode to filter transit types (train vs path)
+                        LOCATIONS[segConfig.from],
+                        LOCATIONS[segConfig.to]
                     );
                     if (transitRes) {
                         segment = { ...transitRes, mode: segConfig.mode, from: segConfig.fromLabel, to: segConfig.toLabel };
@@ -661,7 +668,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                             LOCATIONS[transitConfig.from].address,
                             LOCATIONS[transitConfig.to].address,
                             mustArriveBy,
-                            transitConfig.mode // Pass mode to filter transit types
+                            transitConfig.mode, // Pass mode to filter transit types
+                            LOCATIONS[transitConfig.from],
+                            LOCATIONS[transitConfig.to]
                         );
 
                         if (newTransitRes && newTransitRes.departureDate && newTransitRes.departureDate >= requestedDepartureTime) {
