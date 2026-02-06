@@ -250,9 +250,24 @@ async function fetchTransitDirections(origin: string, destination: string, depar
 
         if (!data.routes || data.routes.length === 0) return null;
 
+        // Filter out routes where the first transit departs before the requested departure time
+        // (Google sometimes returns earlier alternatives that the user can't catch)
+        const depTimeMs = departureTime ? departureTime.getTime() : 0;
+        const validRoutes = depTimeMs > 0
+            ? data.routes.filter((r: any) => {
+                const firstTransit = r.legs?.[0]?.steps?.find((s: any) => s.transitDetails);
+                if (!firstTransit) return true;
+                const transitDep = new Date(firstTransit.transitDetails.stopDetails.departureTime).getTime();
+                return transitDep >= depTimeMs;
+            })
+            : data.routes;
+
+        // Fall back to all routes if filtering removed everything
+        const candidateRoutes = validRoutes.length > 0 ? validRoutes : data.routes;
+
         // Sort routes by arrival time (earliest arrival first)
         // Must use last TRANSIT step (not last step, which may be a walk)
-        const sortedRoutes = data.routes.sort((a: any, b: any) => {
+        const sortedRoutes = candidateRoutes.sort((a: any, b: any) => {
             const aTransitSteps = a.legs?.[0]?.steps?.filter((s: any) => s.transitDetails) || [];
             const bTransitSteps = b.legs?.[0]?.steps?.filter((s: any) => s.transitDetails) || [];
             const aArrival = aTransitSteps.length > 0 ? new Date(aTransitSteps[aTransitSteps.length - 1].transitDetails.stopDetails.arrivalTime).getTime() : 0;
@@ -748,7 +763,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 const gapMs = transitDeparture.getTime() - prevArrival.getTime();
                 const gapMins = gapMs / 60000;
 
-                // If there's a significant gap (> 5 mins), shift all earlier segments later
+                // If there's a significant gap (> 5 mins), shift earlier non-fixed segments later
                 if (gapMins > 5) {
                     const shiftMs = gapMs - (5 * 60000); // Keep 5 min buffer
 
@@ -759,12 +774,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         continue; // Can't shift, would be before requested time
                     }
 
-                    // Shift segments before the transit, but NOT transit/bus with fixed schedules
-                    for (let j = 0; j < i; j++) {
-                        // Skip segments with fixed departure times (transit/bus) - they have real schedules
-                        if (segmentData[j].fixedDepartureTime) {
-                            continue;
+                    // Find the most recent fixed segment before i — only shift segments after it
+                    let prevFixedIndex = -1;
+                    for (let k = i - 1; k >= 0; k--) {
+                        if (segmentData[k].fixedDepartureTime) {
+                            prevFixedIndex = k;
+                            break;
                         }
+                    }
+
+                    // Shift non-fixed segments between the previous fixed segment and this one
+                    for (let j = prevFixedIndex + 1; j < i; j++) {
                         if (segments[j].departureTime) {
                             const oldDep = new Date(segments[j].departureTime!);
                             segments[j].departureTime = new Date(oldDep.getTime() + shiftMs).toISOString();
