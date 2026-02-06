@@ -251,9 +251,12 @@ async function fetchTransitDirections(origin: string, destination: string, depar
         if (!data.routes || data.routes.length === 0) return null;
 
         // Sort routes by arrival time (earliest arrival first)
+        // Must use last TRANSIT step (not last step, which may be a walk)
         const sortedRoutes = data.routes.sort((a: any, b: any) => {
-            const aArrival = new Date(a.legs?.[0]?.steps?.[a.legs[0].steps.length - 1]?.transitDetails?.stopDetails?.arrivalTime || 0).getTime();
-            const bArrival = new Date(b.legs?.[0]?.steps?.[b.legs[0].steps.length - 1]?.transitDetails?.stopDetails?.arrivalTime || 0).getTime();
+            const aTransitSteps = a.legs?.[0]?.steps?.filter((s: any) => s.transitDetails) || [];
+            const bTransitSteps = b.legs?.[0]?.steps?.filter((s: any) => s.transitDetails) || [];
+            const aArrival = aTransitSteps.length > 0 ? new Date(aTransitSteps[aTransitSteps.length - 1].transitDetails.stopDetails.arrivalTime).getTime() : 0;
+            const bArrival = bTransitSteps.length > 0 ? new Date(bTransitSteps[bTransitSteps.length - 1].transitDetails.stopDetails.arrivalTime).getTime() : 0;
 
             // If arrival times are missing or equal, fall back to duration
             if (aArrival !== bArrival) return aArrival - bArrival;
