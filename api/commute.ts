@@ -303,10 +303,15 @@ async function fetchTransitDirections(origin: string, destination: string, depar
             }
         }
 
+        // Use actual transit stop times for duration if available (excludes in-station walking)
+        const transitDurationMins = departureDate && arrivalDate
+            ? Math.round((arrivalDate.getTime() - departureDate.getTime()) / 60000)
+            : Math.round(durationSeconds / 60);
+
         return {
             from: origin,
             to: destination,
-            duration: formatDuration(Math.round(durationSeconds / 60)),
+            duration: formatDuration(transitDurationMins),
             distance: hasPath ? 'PATH + walk' : `${(route.distanceMeters * 0.000621371).toFixed(1)} mi`,
             traffic: delayMinutes > 2 ? `Delays (+${delayMinutes} min)` : 'On time',
             departureTime: departureDate?.toISOString(),
@@ -390,10 +395,15 @@ async function fetchTransitDirectionsWithArrival(origin: string, destination: st
             if (last) arrivalDate = new Date(last);
         }
 
+        // Use actual transit stop times for duration if available (excludes in-station walking)
+        const transitDurationMins = departureDate && arrivalDate
+            ? Math.round((arrivalDate.getTime() - departureDate.getTime()) / 60000)
+            : Math.round(durationSeconds / 60);
+
         return {
             from: origin,
             to: destination,
-            duration: formatDuration(Math.round(durationSeconds / 60)),
+            duration: formatDuration(transitDurationMins),
             distance: hasPath ? 'PATH + walk' : `${(route.distanceMeters * 0.000621371).toFixed(1)} mi`,
             traffic: delayMinutes > 2 ? `Delays (+${delayMinutes} min)` : 'On time',
             departureTime: departureDate?.toISOString(),
