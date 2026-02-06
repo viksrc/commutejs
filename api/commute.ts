@@ -639,7 +639,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                             transitConfig.mode // Pass mode to filter transit types
                         );
 
-                        if (newTransitRes && newTransitRes.departureDate) {
+                        if (newTransitRes && newTransitRes.departureDate && newTransitRes.departureDate >= requestedDepartureTime) {
                             // Update segment data with new transit times
                             sd.segment = { ...sd.segment, ...newTransitRes, mode: transitConfig.mode, from: transitConfig.fromLabel, to: transitConfig.toLabel };
                             sd.fixedDepartureTime = newTransitRes.departureDate;
