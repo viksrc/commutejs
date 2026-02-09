@@ -692,6 +692,68 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 }
             }
 
+            // === PASS 2.5: Validate transit reachability ===
+            // After backward optimization, some transits may depart before the user
+            // can physically reach the station (e.g., when idealStartTime gets capped
+            // to requestedDepartureTime). Walk forward and re-query any unreachable transits.
+            {
+                let earliestArrival = new Date(requestedDepartureTime);
+
+                for (let i = 0; i < segmentData.length; i++) {
+                    const sd = segmentData[i];
+                    if (sd.hasError) continue;
+
+                    if (sd.fixedDepartureTime) {
+                        if (sd.fixedDepartureTime < earliestArrival) {
+                            // This transit departs BEFORE the user can arrive — re-query
+                            if (sd.segConfig.type === 'transit') {
+                                const transitConfig = sd.segConfig as { type: 'transit'; from: string; to: string; fromLabel: string; toLabel: string; mode: 'train' | 'path' };
+                                const newTransitRes = await fetchTransitDirections(
+                                    LOCATIONS[transitConfig.from].address,
+                                    LOCATIONS[transitConfig.to].address,
+                                    earliestArrival,
+                                    transitConfig.mode,
+                                    LOCATIONS[transitConfig.from],
+                                    LOCATIONS[transitConfig.to]
+                                );
+
+                                if (newTransitRes && newTransitRes.departureDate && newTransitRes.departureDate >= earliestArrival) {
+                                    sd.segment = { ...sd.segment, ...newTransitRes, mode: transitConfig.mode, from: transitConfig.fromLabel, to: transitConfig.toLabel };
+                                    sd.fixedDepartureTime = newTransitRes.departureDate;
+                                }
+                            } else if (sd.segConfig.type === 'bus') {
+                                const busConfig = sd.segConfig as { type: 'bus'; direction: 'eastbound' | 'westbound'; from: string; to: string; fromLabel: string; toLabel: string };
+                                const nextBus = await findNextBus(earliestArrival, busConfig.direction);
+                                if (nextBus) {
+                                    const busDepDate = new Date(nextBus.departureTime);
+                                    const busDuration = parseDurationToMinutes(sd.segment.duration);
+                                    const busArrDate = new Date(busDepDate.getTime() + busDuration * 60000);
+                                    sd.segment.departureTime = busDepDate.toISOString();
+                                    sd.segment.arrivalTime = busArrDate.toISOString();
+                                    (sd.segment as any).departureDate = busDepDate;
+                                    (sd.segment as any).arrivalDate = busArrDate;
+                                    sd.fixedDepartureTime = busDepDate;
+                                }
+                            }
+                        }
+
+                        // Advance earliestArrival to this transit's arrival
+                        if ((sd.segment as any).arrivalDate) {
+                            earliestArrival = (sd.segment as any).arrivalDate;
+                        } else if (sd.segment.arrivalTime) {
+                            earliestArrival = new Date(sd.segment.arrivalTime);
+                        } else {
+                            const durMins = parseDurationToMinutes(sd.segment.duration);
+                            earliestArrival = new Date((sd.fixedDepartureTime || earliestArrival).getTime() + durMins * 60000);
+                        }
+                    } else {
+                        // Non-fixed segment (drive/walk): advance by duration
+                        const durMins = parseDurationToMinutes(sd.segment.duration);
+                        earliestArrival = new Date(earliestArrival.getTime() + durMins * 60000);
+                    }
+                }
+            }
+
             // Now find the FIRST fixed transit to calculate ideal start time
             let firstFixedTransitIndex = -1;
             let firstFixedTransitTime: Date | null = null;
