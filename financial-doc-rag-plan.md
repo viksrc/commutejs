@@ -44,24 +44,26 @@ document ingestion, and retrieval.
 
 ### 1a. Document Parsing
 - **Input**: PDF, DOCX, XLSX (10-Ks, earnings reports, balance sheets, etc.)
-- **Tool**: `pdfplumber` or `pymupdf` (CPU, no GPU needed at this scale)
-- **Output**: Raw text + page metadata
+- **Tool**: **Docling** (IBM) — best-in-class for financial documents
+  - Uses DocLayNet for layout analysis and TableFormer for table recognition
+  - **Granite-Docling-258M** (released late 2025) is the recommended backend:
+    a 258M parameter vision-language model, CPU-runnable, MIT-licensed
+  - Achieves **97% TEDS on FinTabNet** (financial table benchmark)
+  - Outputs clean Markdown or structured JSON — no custom parsing needed
+  - Replaces the need for separate table extraction and chunking libraries
+- **Output**: Structured JSON with sections, tables, and metadata preserved
 
 ### 1b. Table Extraction
-- Financial documents are table-heavy — treat tables separately
-- Extract tables as structured data (CSV/JSON) and also as text summaries
-- Tools: `pdfplumber` (rule-based), or `camelot` for complex tables
-- **GPU note**: Table Transformer model is available if rule-based fails,
-  but optional for clean digital PDFs
+- Handled automatically by Docling/Granite-Docling — no separate tool needed
+- Tables are output as structured data alongside prose sections
+- **97.9% accuracy on complex table extraction** (third-party benchmark vs
+  75% for alternatives like Unstructured)
+- Fallback for scanned/image PDFs: Docling includes built-in OCR support
 
 ### 1c. Layout-Aware Chunking
-- Do NOT chunk naively by token count alone
-- Respect document structure: sections, headers, table boundaries
-- Strategy:
-  - Keep tables as single chunks (with metadata: page, table index)
-  - Split prose by section headers first, then by size (512-1024 tokens)
-  - Overlap: ~100 tokens between adjacent prose chunks
-- Attach metadata to every chunk:
+- Docling outputs pre-structured content — use its native chunking rather
+  than building custom logic
+- Still enforce metadata on every chunk:
   ```json
   {
     "doc_id": "aapl-10k-2024",
@@ -72,6 +74,8 @@ document ingestion, and retrieval.
     "source_file": "aapl-10k-2024.pdf"
   }
   ```
+- For prose chunks that exceed token limits, apply a secondary split with
+  ~100 token overlap after Docling's structural pass
 
 ### 1d. Embedding + Indexing
 - Call managed embedding service (no local GPU needed)
@@ -149,9 +153,9 @@ Lightweight UI:
 
 | Component         | Choice                        | Rationale                              |
 |-------------------|-------------------------------|----------------------------------------|
-| PDF parsing       | pdfplumber / pymupdf          | Simple, CPU, no dependencies           |
-| Table extraction  | pdfplumber (rule-based)       | Sufficient for digital PDFs            |
-| Chunking          | Custom (section-aware)        | Better than naive token splitting      |
+| PDF parsing       | Docling + Granite-Docling-258M| Best accuracy on financial docs, CPU   |
+| Table extraction  | Docling (built-in TableFormer)| 97% TEDS on FinTabNet, no extra lib    |
+| Chunking          | Docling native + size split   | Structure-aware, less custom code      |
 | Vector store      | pgvector (Postgres)           | SQL filters, easy ops, persistent      |
 | Embedding         | Managed service (API)         | No GPU needed locally                  |
 | Reranking         | Managed service (API)         | No GPU needed locally                  |
@@ -168,9 +172,9 @@ Since embedding, reranking, and LLM are managed services:
 
 | Stage                    | GPU Benefit?  | Notes                                           |
 |--------------------------|---------------|-------------------------------------------------|
-| PDF parsing              | No            | CPU is fine                                     |
-| Table extraction         | Maybe         | Only if docs are scanned/image-based            |
-| OCR (scanned PDFs)       | Optional      | GPU OCR 5-10x faster, only matters for batches |
+| PDF parsing (Docling)    | No            | Granite-Docling-258M runs well on CPU           |
+| Table extraction         | No            | TableFormer inside Docling is CPU-viable        |
+| OCR (scanned PDFs)       | Optional      | Docling has built-in OCR; GPU speeds it up      |
 | Chunking                 | No            | CPU string operations                           |
 | Embedding (managed)      | N/A           | Handled by service                              |
 | Vector search (pgvector) | No            | CPU is fast enough at this scale                |
